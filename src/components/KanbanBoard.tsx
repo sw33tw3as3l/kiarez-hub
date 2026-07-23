@@ -7,11 +7,13 @@ export default function KanbanBoard({
   canEdit,
   onAdd,
   onOpen,
+  onDelete,
 }: {
   tasksByStatus: Record<TaskStatus, Task[]>;
   canEdit: boolean;
   onAdd: (status: TaskStatus) => void;
   onOpen: (task: Task) => void;
+  onDelete: (task: Task) => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
@@ -33,32 +35,39 @@ export default function KanbanBoard({
 
           <div className="flex flex-col gap-2">
             {tasksByStatus[col.key].map((task) => (
-              <button
+              <div
                 key={task.id}
                 onClick={() => onOpen(task)}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:border-neutral-700 hover:bg-neutral-800"
+                className="group relative cursor-pointer rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:border-neutral-700 hover:bg-neutral-800"
               >
                 <div
                   className={
                     task.status === "done"
-                      ? "text-neutral-400 line-through decoration-neutral-600"
-                      : "text-neutral-100"
+                      ? "pr-5 text-neutral-400 line-through decoration-neutral-600"
+                      : "pr-5 text-neutral-100"
                   }
                 >
                   {task.title}
                 </div>
                 {task.description && (
-                  <div className="mt-1 truncate text-xs text-neutral-500">
+                  <div className="mt-1 truncate pr-5 text-xs text-neutral-500">
                     {task.description}
                   </div>
                 )}
-                {task.due_date && (
-                  <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-400">
-                    {task.due_date}
-                    {task.due_time && ` · ${task.due_time.slice(0, 5)}`}
-                  </div>
+
+                {canEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(task);
+                    }}
+                    className="absolute right-2 top-2 hidden h-5 w-5 items-center justify-center rounded text-neutral-500 hover:bg-neutral-700 hover:text-red-400 group-hover:flex"
+                    title="Delete task"
+                  >
+                    ✕
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
 
             {canEdit && (

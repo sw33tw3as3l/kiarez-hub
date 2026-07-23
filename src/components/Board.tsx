@@ -132,6 +132,11 @@ export default function Board() {
     if (error) throw error;
   }
 
+  async function deleteTaskDirect(task: Task) {
+    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
+    if (error) console.error(error);
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-6">
@@ -236,6 +241,7 @@ export default function Board() {
                 setModal({ mode: "create", status, date: selectedDay })
               }
               onOpen={(task) => canEdit && setModal({ mode: "edit", task })}
+              onDelete={deleteTaskDirect}
             />
           </>
         ) : (
