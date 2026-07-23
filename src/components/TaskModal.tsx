@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { STATUSES, Task, TaskStatus } from "@/lib/supabase";
+import { useRef, useState } from "react";
+import { STATUSES, Task, TaskCategory, TaskStatus } from "@/lib/supabase";
 
 export type TaskDraft = {
   title: string;
@@ -13,6 +13,7 @@ export type TaskDraft = {
 
 export default function TaskModal({
   task,
+  category,
   initialStatus,
   initialDate,
   onClose,
@@ -20,12 +21,14 @@ export default function TaskModal({
   onDelete,
 }: {
   task: Task | null;
+  category: TaskCategory;
   initialStatus?: TaskStatus;
   initialDate?: string;
   onClose: () => void;
   onSave: (draft: TaskDraft) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
+  const showDate = category === "board";
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [status, setStatus] = useState<TaskStatus>(
@@ -38,9 +41,11 @@ export default function TaskModal({
   const [error, setError] = useState("");
 
   const isEditing = !!task;
+  const submitting = useRef(false);
 
   async function handleSave() {
-    if (!title.trim() || saving) return;
+    if (!title.trim() || submitting.current) return;
+    submitting.current = true;
     setSaving(true);
     setError("");
     try {
@@ -55,6 +60,7 @@ export default function TaskModal({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
   }
@@ -129,26 +135,30 @@ export default function TaskModal({
               </select>
             </label>
 
-            <label className="flex-1 text-xs text-neutral-500">
-              Due date
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-neutral-600"
-              />
-            </label>
+            {showDate && (
+              <>
+                <label className="flex-1 text-xs text-neutral-500">
+                  Due date
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-neutral-600"
+                  />
+                </label>
 
-            <label className="flex-1 text-xs text-neutral-500">
-              Time
-              <input
-                type="time"
-                value={dueTime}
-                disabled={!dueDate}
-                onChange={(e) => setDueTime(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-neutral-600 disabled:opacity-40"
-              />
-            </label>
+                <label className="flex-1 text-xs text-neutral-500">
+                  Time
+                  <input
+                    type="time"
+                    value={dueTime}
+                    disabled={!dueDate}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-neutral-600 disabled:opacity-40"
+                  />
+                </label>
+              </>
+            )}
           </div>
         </div>
 

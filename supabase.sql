@@ -5,14 +5,17 @@ create table if not exists tasks (
   title text not null,
   description text,
   status text not null default 'todo' check (status in ('todo', 'doing', 'done')),
+  category text not null default 'board' check (category in ('board', 'longterm')),
   due_date date,
   due_time time,
   position int not null default 0,
   created_at timestamptz not null default now()
 );
 
--- Already ran this file before? Just add the new column:
+-- Already ran this file before? Just add the new columns:
 alter table tasks add column if not exists due_time time;
+alter table tasks add column if not exists category text not null default 'board'
+  check (category in ('board', 'longterm'));
 
 alter table tasks enable row level security;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, Task, TaskStatus } from "@/lib/supabase";
+import { supabase, Task, TaskCategory, TaskStatus } from "@/lib/supabase";
 import { addDays, fmtDate } from "@/lib/date";
 import KanbanBoard from "@/components/KanbanBoard";
 import CalendarView from "@/components/CalendarView";
@@ -11,13 +11,28 @@ import UnlockModal from "@/components/UnlockModal";
 const EDIT_PIN = process.env.NEXT_PUBLIC_EDIT_PIN;
 
 type ModalState =
-  | { mode: "create"; status?: TaskStatus; date?: string }
+  | { mode: "create"; category: TaskCategory; status?: TaskStatus; date?: string }
   | { mode: "edit"; task: Task }
   | null;
 
+function groupByStatus(items: Task[]) {
+  const map: Record<TaskStatus, Task[]> = { todo: [], doing: [], done: [] };
+  for (const t of items) map[t.status].push(t);
+  return map;
+}
+
+function positionsFor(items: Task[], skipId?: string) {
+  return Promise.all(
+    items.map((t, i) => {
+      if (t.id === skipId || t.position === i) return null;
+      return supabase.from("tasks").update({ position: i }).eq("id", t.id);
+    })
+  );
+}
+
 export default function Board() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [view, setView] = useState<"board" | "calendar">("board");
+  const [view, setView] = useState<"board" | "calendar" | "longterm">("board");
   const [canEdit, setCanEdit] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [unlocking, setUnlocking] = useState(false);
@@ -34,35 +49,50 @@ export default function Board() {
 
     load();
 
+    let debounce: ReturnType<typeof setTimeout>;
+    const debouncedLoad = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(load, 300);
+    };
+
     const channel = supabase
       .channel("tasks-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
-        load
+        debouncedLoad
       )
       .subscribe();
 
     return () => {
+      clearTimeout(debounce);
       supabase.removeChannel(channel);
     };
   }, []);
 
-  const tasksByStatus = useMemo(() => {
-    const map: Record<TaskStatus, Task[]> = { todo: [], doing: [], done: [] };
-    for (const t of tasks) map[t.status].push(t);
-    return map;
+  const dayTasksByStatus = useMemo(() => {
+    return groupByStatus(
+      tasks.filter(
+        (t) =>
+          t.category === "board" &&
+          (t.due_date === selectedDay ||
+            (!t.due_date && selectedDay === todayStr))
+      )
+    );
+  }, [tasks, selectedDay, todayStr]);
+
+  const longtermByStatus = useMemo(() => {
+    return groupByStatus(tasks.filter((t) => t.category === "longterm"));
   }, [tasks]);
 
-  const dayTasksByStatus = useMemo(() => {
-    const map: Record<TaskStatus, Task[]> = { todo: [], doing: [], done: [] };
+  const tasksByDate = useMemo(() => {
+    const map: Record<string, Task[]> = {};
     for (const t of tasks) {
-      const belongsToDay =
-        t.due_date === selectedDay || (!t.due_date && selectedDay === todayStr);
-      if (belongsToDay) map[t.status].push(t);
+      if (!t.due_date || t.category !== "board") continue;
+      (map[t.due_date] ??= []).push(t);
     }
     return map;
-  }, [tasks, selectedDay, todayStr]);
+  }, [tasks]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -77,15 +107,6 @@ export default function Board() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [view, modal, unlocking, todayStr]);
-
-  const tasksByDate = useMemo(() => {
-    const map: Record<string, Task[]> = {};
-    for (const t of tasks) {
-      if (!t.due_date) continue;
-      (map[t.due_date] ??= []).push(t);
-    }
-    return map;
-  }, [tasks]);
 
   function tryUnlock(pin: string) {
     if (EDIT_PIN && pin === EDIT_PIN) {
@@ -108,15 +129,18 @@ export default function Board() {
         })
         .eq("id", modal.task.id);
       if (error) throw error;
-    } else {
-      const status = draft.status;
-      const position = tasksByStatus[status]?.length ?? 0;
+    } else if (modal?.mode === "create") {
+      const category = modal.category;
+      const subset =
+        category === "longterm" ? longtermByStatus : dayTasksByStatus;
+      const position = subset[draft.status]?.length ?? 0;
       const { error } = await supabase.from("tasks").insert({
         title: draft.title,
         description: draft.description || null,
-        status,
-        due_date: draft.due_date || null,
-        due_time: draft.due_time || null,
+        status: draft.status,
+        category,
+        due_date: category === "board" ? draft.due_date || null : null,
+        due_time: category === "board" ? draft.due_time || null : null,
         position,
       });
       if (error) throw error;
@@ -135,6 +159,41 @@ export default function Board() {
   async function deleteTaskDirect(task: Task) {
     const { error } = await supabase.from("tasks").delete().eq("id", task.id);
     if (error) console.error(error);
+  }
+
+  async function persistCardMove(
+    subset: Record<TaskStatus, Task[]>,
+    taskId: string,
+    newStatus: TaskStatus,
+    newIndex: number
+  ) {
+    const moved = tasks.find((t) => t.id === taskId);
+    if (!moved) return;
+    const sourceStatus = moved.status;
+
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+    );
+
+    const destItems = subset[newStatus].filter((t) => t.id !== taskId);
+    destItems.splice(newIndex, 0, { ...moved, status: newStatus });
+
+    try {
+      await supabase
+        .from("tasks")
+        .update({ status: newStatus, position: newIndex })
+        .eq("id", taskId);
+
+      const writes = [positionsFor(destItems, taskId)];
+      if (sourceStatus !== newStatus) {
+        writes.push(
+          positionsFor(subset[sourceStatus].filter((t) => t.id !== taskId))
+        );
+      }
+      await Promise.all(writes);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   return (
@@ -176,16 +235,18 @@ export default function Board() {
             >
               Calendar
             </button>
+            <button
+              onClick={() => setView("longterm")}
+              className={`rounded-md px-3 py-1.5 transition ${
+                view === "longterm"
+                  ? "bg-neutral-800 text-neutral-100"
+                  : "text-neutral-400 hover:text-neutral-200"
+              }`}
+            >
+              Long-term
+            </button>
           </div>
 
-          {canEdit && (
-            <button
-              onClick={() => setModal({ mode: "create" })}
-              className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-            >
-              + New Task
-            </button>
-          )}
           {canEdit ? (
             <span className="whitespace-nowrap text-xs font-medium text-emerald-400">
               Editing
@@ -202,7 +263,7 @@ export default function Board() {
       </header>
 
       <div className="mx-auto max-w-6xl">
-        {view === "board" ? (
+        {view === "board" && (
           <>
             <div className="flex items-center justify-center gap-3 px-6 pt-6 pb-4">
               <button
@@ -211,13 +272,13 @@ export default function Board() {
               >
                 ←
               </button>
-              <button
-                onClick={() => setSelectedDay(todayStr)}
-                className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+              <h2
+                className={`w-56 text-center text-sm font-semibold ${
+                  selectedDay === todayStr
+                    ? "rounded-full bg-blue-600/15 py-1 text-blue-400"
+                    : "text-neutral-100"
+                }`}
               >
-                Today
-              </button>
-              <h2 className="w-56 text-center text-sm font-semibold text-neutral-100">
                 {new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
                   "en-US",
                   {
@@ -238,25 +299,55 @@ export default function Board() {
               tasksByStatus={dayTasksByStatus}
               canEdit={canEdit}
               onAdd={(status) =>
-                setModal({ mode: "create", status, date: selectedDay })
+                setModal({
+                  mode: "create",
+                  category: "board",
+                  status,
+                  date: selectedDay,
+                })
               }
               onOpen={(task) => canEdit && setModal({ mode: "edit", task })}
               onDelete={deleteTaskDirect}
+              onCardMove={(id, status, idx) =>
+                persistCardMove(dayTasksByStatus, id, status, idx)
+              }
             />
           </>
-        ) : (
+        )}
+
+        {view === "calendar" && (
           <CalendarView
             tasksByDate={tasksByDate}
             canEdit={canEdit}
-            onAdd={(date) => setModal({ mode: "create", date })}
+            onAdd={(date) =>
+              setModal({ mode: "create", category: "board", date })
+            }
             onOpen={(task) => canEdit && setModal({ mode: "edit", task })}
           />
+        )}
+
+        {view === "longterm" && (
+          <div className="pt-6">
+            <KanbanBoard
+              tasksByStatus={longtermByStatus}
+              canEdit={canEdit}
+              onAdd={(status) =>
+                setModal({ mode: "create", category: "longterm", status })
+              }
+              onOpen={(task) => canEdit && setModal({ mode: "edit", task })}
+              onDelete={deleteTaskDirect}
+              onCardMove={(id, status, idx) =>
+                persistCardMove(longtermByStatus, id, status, idx)
+              }
+            />
+          </div>
         )}
       </div>
 
       {modal && (
         <TaskModal
           task={modal.mode === "edit" ? modal.task : null}
+          category={modal.mode === "edit" ? modal.task.category : modal.category}
           initialStatus={modal.mode === "create" ? modal.status : undefined}
           initialDate={modal.mode === "create" ? modal.date : undefined}
           onClose={() => setModal(null)}

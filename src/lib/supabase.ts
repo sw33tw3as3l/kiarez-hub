@@ -7,11 +7,14 @@ export const supabase = createClient(url, anonKey);
 
 export type TaskStatus = "todo" | "doing" | "done";
 
+export type TaskCategory = "board" | "longterm";
+
 export type Task = {
   id: string;
   title: string;
   description: string | null;
   status: TaskStatus;
+  category: TaskCategory;
   due_date: string | null;
   due_time: string | null;
   position: number;
