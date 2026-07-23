@@ -187,6 +187,7 @@ function SortableCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id, disabled: !canEdit });
+  const [expanded, setExpanded] = useState(false);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -199,10 +200,10 @@ function SortableCard({
       style={style}
       {...(canEdit ? attributes : {})}
       {...(canEdit ? listeners : {})}
-      onClick={() => onOpen(task)}
+      onClick={() => (canEdit ? onOpen(task) : setExpanded((e) => !e))}
       className={`touch-none ${isDragging ? "opacity-40" : ""}`}
     >
-      <Card task={task} canEdit={canEdit} onDelete={onDelete} />
+      <Card task={task} canEdit={canEdit} onDelete={onDelete} expanded={expanded} />
     </div>
   );
 }
@@ -211,10 +212,12 @@ function Card({
   task,
   canEdit,
   onDelete,
+  expanded,
 }: {
   task: Task;
   canEdit: boolean;
   onDelete?: (task: Task) => void;
+  expanded?: boolean;
 }) {
   return (
     <div className="group relative cursor-pointer rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:border-neutral-700 hover:bg-neutral-800">
@@ -228,7 +231,11 @@ function Card({
         {task.title}
       </div>
       {task.description && (
-        <div className="mt-1 truncate pr-5 text-xs text-neutral-500">
+        <div
+          className={`mt-1 pr-5 text-xs text-neutral-500 ${
+            expanded ? "whitespace-pre-wrap" : "truncate"
+          }`}
+        >
           {task.description}
         </div>
       )}
