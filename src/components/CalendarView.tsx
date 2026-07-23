@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { STATUS_COLORS, Task } from "@/lib/supabase";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MAX_VISIBLE = 3;
+const MAX_VISIBLE = 4;
 
 function fmt(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -97,7 +97,7 @@ export default function CalendarView({
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="bg-neutral-900 py-2 text-center text-xs font-medium text-neutral-500"
+            className="bg-neutral-900 py-2.5 text-center text-sm font-medium text-neutral-500"
           >
             {d}
           </div>
@@ -114,13 +114,13 @@ export default function CalendarView({
           return (
             <div
               key={dateStr}
-              className={`group relative min-h-[104px] bg-neutral-950 p-1.5 text-left ${
+              className={`group relative min-h-[144px] bg-neutral-950 p-2 text-left ${
                 inMonth ? "" : "opacity-40"
               }`}
             >
-              <div className="mb-1 flex items-center justify-between">
+              <div className="mb-1.5 flex items-center justify-between">
                 <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                  className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${
                     isToday
                       ? "bg-blue-600 font-semibold text-white"
                       : "text-neutral-400"
@@ -131,19 +131,19 @@ export default function CalendarView({
                 {canEdit && (
                   <button
                     onClick={() => onAdd(dateStr)}
-                    className="hidden h-5 w-5 items-center justify-center rounded text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200 group-hover:flex"
+                    className="hidden h-6 w-6 items-center justify-center rounded text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200 group-hover:flex"
                   >
                     +
                   </button>
                 )}
               </div>
 
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-1">
                 {visible.map((t) => (
                   <button
                     key={t.id}
                     onClick={() => onOpen(t)}
-                    className={`truncate rounded px-1.5 py-0.5 text-left text-[11px] ${STATUS_COLORS[t.status].chip}`}
+                    className={`truncate rounded px-1.5 py-1 text-left text-xs ${STATUS_COLORS[t.status].chip}`}
                     title={t.title}
                   >
                     {t.due_time && (
@@ -157,7 +157,7 @@ export default function CalendarView({
                 {hidden > 0 && (
                   <button
                     onClick={() => setOverflowDate(dateStr)}
-                    className="px-1.5 text-left text-[11px] text-neutral-500 hover:text-neutral-300"
+                    className="px-1.5 text-left text-xs text-neutral-500 hover:text-neutral-300"
                   >
                     +{hidden} more
                   </button>

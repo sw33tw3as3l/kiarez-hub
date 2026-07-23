@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kiarez Hub",
+  title: "KiaRez Hub",
   description: "Fast personal task board & calendar",
 };
 

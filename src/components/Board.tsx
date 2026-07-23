@@ -141,7 +141,7 @@ export default function Board() {
           </div>
           <div className="leading-tight">
             <h1 className="text-sm font-semibold tracking-tight">
-              Kiarez Hub
+              KiaRez Hub
             </h1>
             <p className="hidden text-xs text-neutral-500 sm:block">
               Personal tasks &amp; calendar
@@ -199,7 +199,7 @@ export default function Board() {
       <div className="mx-auto max-w-6xl">
         {view === "board" ? (
           <>
-            <div className="flex items-center justify-center gap-3 px-6 pt-6">
+            <div className="flex items-center justify-center gap-3 px-6 pt-6 pb-4">
               <button
                 onClick={() => setSelectedDay((d) => addDays(d, -1))}
                 className="rounded-lg px-2 py-1.5 text-neutral-400 hover:bg-neutral-800"
@@ -229,9 +229,6 @@ export default function Board() {
                 →
               </button>
             </div>
-            <p className="pb-2 text-center text-xs text-neutral-600">
-              Use ← → to switch days, T for today
-            </p>
             <KanbanBoard
               tasksByStatus={dayTasksByStatus}
               canEdit={canEdit}
