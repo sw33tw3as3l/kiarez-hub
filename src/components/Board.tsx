@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase, Task, TaskCategory, TaskStatus } from "@/lib/supabase";
 import { addDays, fmtDate } from "@/lib/date";
+import { randomFunLabel } from "@/lib/funLabels";
 import KanbanBoard from "@/components/KanbanBoard";
 import CalendarView from "@/components/CalendarView";
 import TaskModal, { TaskDraft } from "@/components/TaskModal";
@@ -38,6 +39,14 @@ export default function Board() {
   const [unlocking, setUnlocking] = useState(false);
   const todayStr = fmtDate(new Date());
   const [selectedDay, setSelectedDay] = useState(todayStr);
+  const [greeting, setGreeting] = useState("");
+
+  useEffect(() => {
+    // Runs once after mount so the server-prerendered greeting stays
+    // stable and only randomizes client-side, avoiding a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGreeting(randomFunLabel());
+  }, []);
 
   useEffect(() => {
     const load = () =>
@@ -208,7 +217,7 @@ export default function Board() {
               KiaRez Hub
             </h1>
             <p className="hidden text-xs text-neutral-500 sm:block">
-              Personal tasks &amp; calendar
+              {greeting || "Personal tasks & calendar"}
             </p>
           </div>
         </div>

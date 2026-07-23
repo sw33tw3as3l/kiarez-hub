@@ -9,10 +9,6 @@ export const FUN_LABELS = [
   "Nice work",
 ];
 
-export function funLabelFor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  }
-  return FUN_LABELS[Math.abs(hash) % FUN_LABELS.length];
+export function randomFunLabel(): string {
+  return FUN_LABELS[Math.floor(Math.random() * FUN_LABELS.length)];
 }

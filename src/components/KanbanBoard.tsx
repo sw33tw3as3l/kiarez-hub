@@ -21,7 +21,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { STATUSES, STATUS_COLORS, Task, TaskStatus } from "@/lib/supabase";
-import { funLabelFor } from "@/lib/funLabels";
 
 const columnDropId = (status: TaskStatus) => `column-${status}`;
 
@@ -219,19 +218,14 @@ function Card({
 }) {
   return (
     <div className="group relative cursor-pointer rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:border-neutral-700 hover:bg-neutral-800">
-      <div className="flex items-start justify-between gap-2 pr-1">
-        <div
-          className={
-            task.status === "done"
-              ? "text-neutral-400 line-through decoration-neutral-600"
-              : "text-neutral-100"
-          }
-        >
-          {task.title}
-        </div>
-        <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-medium text-neutral-400">
-          {funLabelFor(task.id)}
-        </span>
+      <div
+        className={
+          task.status === "done"
+            ? "pr-5 text-neutral-400 line-through decoration-neutral-600"
+            : "pr-5 text-neutral-100"
+        }
+      >
+        {task.title}
       </div>
       {task.description && (
         <div className="mt-1 truncate pr-5 text-xs text-neutral-500">
