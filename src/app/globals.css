@@ -1,32 +1,79 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Material You "ember" scheme, lifted from the system theme that
+ * quickshell/illogical-impulse generates from the wallpaper
+ * (~/.local/state/quickshell/user/generated/material_colors.scss).
+ * Regenerate that file after a wallpaper change and re-copy these values
+ * to keep the board matching the desktop.
+ */
+@theme {
+  /* Surfaces — warm near-black, not neutral grey */
+  --color-canvas: #1d100e;
+  --color-surf-low: #261816;
+  --color-surf: #2a1c1a;
+  --color-surf-high: #352624;
+  --color-surf-highest: #41312e;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Text */
+  --color-ink: #f7ddd9;
+  --color-ink-dim: #e1bfb9;
+  --color-ink-faint: #a88a85;
+  --color-ink-ghost: #7d635f;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Lines */
+  --color-line: #59413d;
+  --color-line-strong: #a88a85;
+
+  /* Primary — the ember accent */
+  --color-ember: #ffb4a8;
+  --color-ember-light: #ffdad4;
+  --color-on-ember: #690100;
+  --color-ember-deep: #961a0f;
+  --color-on-ember-deep: #ffa698;
+
+  /* Tertiary — antique gold, for warnings and highlights */
+  --color-gold: #efbf72;
+  --color-gold-deep: #b48a42;
+
+  /* Error */
+  --color-danger: #ffb4ab;
+  --color-danger-deep: #93000a;
+  --color-on-danger-deep: #ffdad6;
+
+  /* Success — muted sage, sits far better in this scheme than emerald */
+  --color-success: #b5ccba;
+  --color-success-deep: #374b3e;
+  --color-on-success-deep: #d1e9d6;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
   font-family: Arial, Helvetica, sans-serif;
-  accent-color: #dc2626;
+  accent-color: var(--color-ember);
 }
 
 ::selection {
-  background: #dc2626;
-  color: #fff;
+  background: #fb9c8d;
+  color: #763228;
+}
+
+/* Warm ember glow bleeding down from the top, so the page reads as lit
+   rather than flat. Fixed and behind everything, no layout cost. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70rem 32rem at 50% -12rem, rgb(150 26 15 / 0.5), transparent 70%),
+    radial-gradient(40rem 24rem at 100% 0, rgb(239 191 114 / 0.07), transparent 70%);
+}
+
+/* Native date/time pickers ship a blue-white calendar icon; warm it up. */
+::-webkit-calendar-picker-indicator {
+  filter: invert(85%) sepia(20%) saturate(600%) hue-rotate(315deg);
+  cursor: pointer;
 }

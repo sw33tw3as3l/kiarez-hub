@@ -148,15 +148,15 @@ function Column({
   const { setNodeRef } = useDroppable({ id: columnDropId(status) });
 
   return (
-    <div className="rounded-2xl bg-neutral-900/60 p-3">
+    <div className="rounded-2xl bg-surf-low p-3">
       <div className="mb-3 flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <span
             className={`h-2 w-2 rounded-full ${STATUS_COLORS[status].dot}`}
           />
-          <h2 className="text-sm font-medium text-neutral-300">{label}</h2>
+          <h2 className="text-sm font-medium text-ink-dim">{label}</h2>
         </div>
-        <span className="text-xs text-neutral-500">{tasks.length}</span>
+        <span className="text-xs text-ink-faint">{tasks.length}</span>
       </div>
 
       <SortableContext
@@ -178,7 +178,7 @@ function Column({
           {canEdit && (
             <button
               onClick={() => onAdd(status)}
-              className="rounded-xl border border-dashed border-neutral-800 py-2 text-xs text-neutral-500 transition hover:border-neutral-700 hover:text-neutral-300"
+              className="rounded-xl border border-dashed border-line py-2 text-xs text-ink-faint transition hover:border-line-strong hover:text-ink-dim"
             >
               + New task
             </button>
@@ -249,24 +249,24 @@ function Card({
 
   return (
     <div
-      className={`group relative cursor-pointer rounded-xl border bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:bg-neutral-800 ${
+      className={`group relative cursor-pointer rounded-xl border bg-surf p-3 text-left text-sm shadow-sm transition hover:bg-surf-high ${
         needsDefining
-          ? "border-red-600/50 hover:border-red-600"
-          : "border-neutral-800 hover:border-neutral-700"
+          ? "border-gold-deep hover:border-gold"
+          : "border-line hover:border-line-strong"
       }`}
     >
       <div className="mb-1 flex items-center gap-1.5 pr-5 text-[11px]">
         {goalTitle ? (
-          <span className="truncate rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400">
+          <span className="truncate rounded bg-surf-high px-1.5 py-0.5 text-ink-dim">
             {goalTitle}
           </span>
         ) : (
-          <span className="shrink-0 rounded bg-red-600/20 px-1.5 py-0.5 font-medium text-red-400">
+          <span className="shrink-0 rounded bg-gold-deep/25 px-1.5 py-0.5 font-medium text-gold">
             No goal
           </span>
         )}
         {task.effort && (
-          <span className="ml-auto shrink-0 text-neutral-600">
+          <span className="ml-auto shrink-0 text-ink-ghost">
             {EFFORT_LABELS[task.effort]}
           </span>
         )}
@@ -275,8 +275,8 @@ function Card({
       <div
         className={
           task.status === "done"
-            ? "pr-5 text-neutral-400 line-through decoration-neutral-600"
-            : "pr-5 text-neutral-100"
+            ? "pr-5 text-ink-dim line-through decoration-ink-ghost"
+            : "pr-5 text-ink"
         }
       >
         {task.title}
@@ -284,20 +284,20 @@ function Card({
 
       {/* The next action is what you actually do, so it outranks the notes. */}
       {task.next_action ? (
-        <div className="mt-1 truncate pr-5 text-xs text-neutral-500">
+        <div className="mt-1 truncate pr-5 text-xs text-ink-faint">
           → {task.next_action}
         </div>
       ) : (
-        <div className="mt-1 pr-5 text-xs text-red-400/80">
+        <div className="mt-1 pr-5 text-xs text-gold/70">
           → no next step defined
         </div>
       )}
 
       {expanded && (
-        <div className="mt-2 flex flex-col gap-1 border-t border-neutral-800 pt-2 text-xs text-neutral-500">
+        <div className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs text-ink-faint">
           {task.outcome && (
             <p className="whitespace-pre-wrap">
-              <span className="text-neutral-600">Done when: </span>
+              <span className="text-ink-ghost">Done when: </span>
               {task.outcome}
             </p>
           )}
@@ -313,7 +313,7 @@ function Card({
             e.stopPropagation();
             onDelete(task);
           }}
-          className="absolute right-2 bottom-2 hidden h-5 w-5 items-center justify-center rounded text-neutral-500 hover:bg-neutral-700 hover:text-red-400 group-hover:flex"
+          className="absolute right-2 bottom-2 hidden h-5 w-5 items-center justify-center rounded text-ink-faint hover:bg-surf-highest hover:text-danger group-hover:flex"
           title="Delete task"
         >
           ✕

@@ -10,7 +10,7 @@ export type GoalDraft = {
 };
 
 const inputClass =
-  "w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-red-600";
+  "w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-ghost focus:border-ember";
 
 export default function GoalModal({
   goal,
@@ -69,29 +69,29 @@ export default function GoalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-line bg-surf p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-200">
+          <h3 className="text-sm font-semibold text-ink">
             {goal ? "Edit goal" : "New goal"}
           </h3>
           <button
             onClick={onClose}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+            className="rounded p-1 text-ink-faint hover:bg-surf-high hover:text-ink-dim"
           >
             ✕
           </button>
         </div>
 
         <div className="flex flex-col gap-3">
-          <label className="block text-xs text-neutral-500">
+          <label className="block text-xs text-ink-faint">
             <span className="mb-1 block">
-              Goal<span className="ml-0.5 text-red-500">*</span>
+              Goal<span className="ml-0.5 text-ember">*</span>
             </span>
             <input
               autoFocus
@@ -103,7 +103,7 @@ export default function GoalModal({
             />
           </label>
 
-          <label className="block text-xs text-neutral-500">
+          <label className="block text-xs text-ink-faint">
             <span className="mb-1 block">Why it matters</span>
             <textarea
               value={description}
@@ -114,7 +114,7 @@ export default function GoalModal({
             />
           </label>
 
-          <label className="block text-xs text-neutral-500">
+          <label className="block text-xs text-ink-faint">
             <span className="mb-1 block">Target date</span>
             <input
               type="date"
@@ -126,7 +126,7 @@ export default function GoalModal({
         </div>
 
         {error && (
-          <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <p className="mt-3 rounded-lg bg-danger-deep/25 px-3 py-2 text-xs text-danger">
             {error}
           </p>
         )}
@@ -138,8 +138,8 @@ export default function GoalModal({
                 onClick={handleDelete}
                 className={`text-xs ${
                   confirmingDelete
-                    ? "font-medium text-red-400"
-                    : "text-neutral-500 hover:text-red-400"
+                    ? "font-medium text-danger"
+                    : "text-ink-faint hover:text-danger"
                 }`}
               >
                 {confirmingDelete ? "Confirm delete" : "Delete goal"}
@@ -147,12 +147,12 @@ export default function GoalModal({
               {confirmingDelete ? (
                 <button
                   onClick={() => setConfirmingDelete(false)}
-                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                  className="text-xs text-ink-faint hover:text-ink-dim"
                 >
                   Cancel
                 </button>
               ) : (
-                <span className="text-[11px] text-neutral-600">
+                <span className="text-[11px] text-ink-ghost">
                   Its tasks stay, unlinked
                 </span>
               )}
@@ -163,14 +163,14 @@ export default function GoalModal({
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800"
+              className="rounded-lg px-3 py-1.5 text-sm text-ink-dim hover:bg-surf-high"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={!title.trim() || saving}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+              className="rounded-lg bg-ember px-3 py-1.5 text-sm font-medium text-on-ember hover:bg-ember-light disabled:opacity-40"
             >
               {goal ? "Save" : "Create"}
             </button>

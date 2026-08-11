@@ -67,24 +67,24 @@ export default function CalendarView({
         <div className="flex items-center gap-2">
           <button
             onClick={goToday}
-            className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-dim hover:bg-surf-high"
           >
             Today
           </button>
           <button
             onClick={() => shiftMonth(-1)}
-            className="rounded-lg px-2 py-1.5 text-neutral-400 hover:bg-neutral-800"
+            className="rounded-lg px-2 py-1.5 text-ink-dim hover:bg-surf-high"
           >
             ←
           </button>
           <button
             onClick={() => shiftMonth(1)}
-            className="rounded-lg px-2 py-1.5 text-neutral-400 hover:bg-neutral-800"
+            className="rounded-lg px-2 py-1.5 text-ink-dim hover:bg-surf-high"
           >
             →
           </button>
         </div>
-        <h2 className="text-base font-semibold text-neutral-100">
+        <h2 className="text-base font-semibold text-ink">
           {new Date(year, month, 1).toLocaleString("en-US", {
             month: "long",
             year: "numeric",
@@ -93,11 +93,11 @@ export default function CalendarView({
         <div className="w-[132px]" />
       </div>
 
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800">
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-line bg-surf-high">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="bg-neutral-900 py-2.5 text-center text-sm font-medium text-neutral-500"
+            className="bg-surf py-2.5 text-center text-sm font-medium text-ink-faint"
           >
             {d}
           </div>
@@ -114,7 +114,7 @@ export default function CalendarView({
           return (
             <div
               key={dateStr}
-              className={`group relative min-h-[144px] bg-neutral-950 p-2 text-left ${
+              className={`group relative min-h-[144px] bg-canvas p-2 text-left ${
                 inMonth ? "" : "opacity-40"
               }`}
             >
@@ -122,8 +122,8 @@ export default function CalendarView({
                 <span
                   className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${
                     isToday
-                      ? "bg-red-600 font-semibold text-white"
-                      : "text-neutral-400"
+                      ? "bg-ember font-semibold text-on-ember"
+                      : "text-ink-dim"
                   }`}
                 >
                   {date.getDate()}
@@ -131,7 +131,7 @@ export default function CalendarView({
                 {canEdit && (
                   <button
                     onClick={() => onAdd(dateStr)}
-                    className="hidden h-6 w-6 items-center justify-center rounded text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200 group-hover:flex"
+                    className="hidden h-6 w-6 items-center justify-center rounded text-ink-faint hover:bg-surf-high hover:text-ink group-hover:flex"
                   >
                     +
                   </button>
@@ -157,7 +157,7 @@ export default function CalendarView({
                 {hidden > 0 && (
                   <button
                     onClick={() => setOverflowDate(dateStr)}
-                    className="px-1.5 text-left text-xs text-neutral-500 hover:text-neutral-300"
+                    className="px-1.5 text-left text-xs text-ink-faint hover:text-ink-dim"
                   >
                     +{hidden} more
                   </button>
@@ -170,15 +170,15 @@ export default function CalendarView({
 
       {overflowDate && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-sm"
           onClick={() => setOverflowDate(null)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl"
+            className="w-full max-w-sm rounded-2xl border border-line bg-surf p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-neutral-200">
+              <h3 className="text-sm font-semibold text-ink">
                 {new Date(overflowDate).toLocaleDateString("en-US", {
                   weekday: "long",
                   month: "long",
@@ -187,7 +187,7 @@ export default function CalendarView({
               </h3>
               <button
                 onClick={() => setOverflowDate(null)}
-                className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                className="rounded p-1 text-ink-faint hover:bg-surf-high hover:text-ink-dim"
               >
                 ✕
               </button>

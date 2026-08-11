@@ -285,30 +285,30 @@ export default function Board() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-6">
+    <div className="min-h-screen bg-canvas text-ink">
+      <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-sm font-bold text-white">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ember text-sm font-bold text-on-ember">
             K
           </div>
           <div className="leading-tight">
             <h1 className="text-sm font-semibold tracking-tight">KiaRez Hub</h1>
-            <p className="hidden text-xs text-neutral-500 sm:block">
+            <p className="hidden text-xs text-ink-faint sm:block">
               {greeting || "Personal tasks & calendar"}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-neutral-800 p-0.5 text-sm">
+          <div className="flex rounded-lg border border-line p-0.5 text-sm">
             {VIEWS.map((v) => (
               <button
                 key={v.key}
                 onClick={() => setView(v.key)}
                 className={`rounded-md px-3 py-1.5 transition ${
                   view === v.key
-                    ? "bg-red-600 font-medium text-white"
-                    : "text-neutral-400 hover:text-neutral-200"
+                    ? "bg-ember font-medium text-on-ember"
+                    : "text-ink-dim hover:text-ink"
                 }`}
               >
                 {v.label}
@@ -317,13 +317,13 @@ export default function Board() {
           </div>
 
           {canEdit ? (
-            <span className="whitespace-nowrap text-xs font-medium text-red-400">
+            <span className="whitespace-nowrap text-xs font-medium text-ember">
               Editing
             </span>
           ) : (
             <button
               onClick={() => setUnlocking(true)}
-              className="whitespace-nowrap text-xs text-neutral-400 underline hover:text-neutral-200"
+              className="whitespace-nowrap text-xs text-ink-dim underline hover:text-ink"
             >
               Edit
             </button>
@@ -337,15 +337,15 @@ export default function Board() {
             <div className="flex items-center justify-center gap-3 px-6 pt-6 pb-4">
               <button
                 onClick={() => setSelectedDay((d) => addDays(d, -1))}
-                className="rounded-lg px-2 py-1.5 text-neutral-400 hover:bg-neutral-800"
+                className="rounded-lg px-2 py-1.5 text-ink-dim hover:bg-surf-high"
               >
                 ←
               </button>
               <h2
                 className={`w-56 text-center text-sm font-semibold ${
                   selectedDay === todayStr
-                    ? "rounded-full bg-red-600/15 py-1 text-red-400"
-                    : "text-neutral-100"
+                    ? "rounded-full bg-ember-deep/35 py-1 text-ember"
+                    : "text-ink"
                 }`}
               >
                 {new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
@@ -359,7 +359,7 @@ export default function Board() {
               </h2>
               <button
                 onClick={() => setSelectedDay((d) => addDays(d, 1))}
-                className="rounded-lg px-2 py-1.5 text-neutral-400 hover:bg-neutral-800"
+                className="rounded-lg px-2 py-1.5 text-ink-dim hover:bg-surf-high"
               >
                 →
               </button>

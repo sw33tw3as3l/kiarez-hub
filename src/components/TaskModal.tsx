@@ -30,7 +30,7 @@ export type TaskDraft = {
 const NEW_GOAL = "__new__";
 
 const inputClass =
-  "w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-red-600";
+  "w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-ghost focus:border-ember";
 
 export default function TaskModal({
   task,
@@ -128,20 +128,20 @@ export default function TaskModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-surf p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-200">
+          <h3 className="text-sm font-semibold text-ink">
             {isEditing ? "Edit task" : "New task"}
           </h3>
           <button
             onClick={onClose}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+            className="rounded p-1 text-ink-faint hover:bg-surf-high hover:text-ink-dim"
           >
             ✕
           </button>
@@ -149,7 +149,7 @@ export default function TaskModal({
 
         <div className="mb-4 flex items-center gap-2 text-xs">
           <StepPip active={step === 1} done={step > 1} label="Why & what" />
-          <span className="h-px flex-1 bg-neutral-800" />
+          <span className="h-px flex-1 bg-surf-high" />
           <StepPip active={step === 2} done={false} label="Size & first step" />
         </div>
 
@@ -220,7 +220,7 @@ export default function TaskModal({
         ) : (
           <div className="flex flex-col gap-3">
             <Field label="Where it lives" required plain>
-              <div className="flex rounded-lg border border-neutral-800 p-0.5 text-sm">
+              <div className="flex rounded-lg border border-line p-0.5 text-sm">
                 {(
                   [
                     { key: "board", label: "A day" },
@@ -232,8 +232,8 @@ export default function TaskModal({
                     onClick={() => setCategory(c.key)}
                     className={`flex-1 rounded-md px-3 py-1.5 transition ${
                       category === c.key
-                        ? "bg-red-600 font-medium text-white"
-                        : "text-neutral-400 hover:text-neutral-200"
+                        ? "bg-ember font-medium text-on-ember"
+                        : "text-ink-dim hover:text-ink"
                     }`}
                   >
                     {c.label}
@@ -255,8 +255,8 @@ export default function TaskModal({
                     onClick={() => setEffort(e.key)}
                     className={`rounded-lg border px-2 py-1.5 text-xs transition ${
                       effort === e.key
-                        ? "border-red-600 bg-red-600/20 font-medium text-red-300"
-                        : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                        ? "border-ember bg-ember-deep/50 font-medium text-on-ember-deep"
+                        : "border-line text-ink-dim hover:border-line-strong hover:text-ink"
                     }`}
                   >
                     {e.label}
@@ -266,12 +266,12 @@ export default function TaskModal({
             </Field>
 
             {tooBigForBoard && (
-              <div className="rounded-lg border border-red-600/40 bg-red-600/10 px-3 py-2 text-xs text-red-300">
+              <div className="rounded-lg border border-danger-deep bg-danger-deep/30 px-3 py-2 text-xs text-on-danger-deep">
                 That&apos;s too big for a single day. Split it into smaller
                 tasks, or{" "}
                 <button
                   onClick={() => setCategory("longterm")}
-                  className="font-medium underline underline-offset-2 hover:text-red-200"
+                  className="font-medium underline underline-offset-2 hover:text-ink"
                 >
                   move it to Long-term
                 </button>
@@ -336,7 +336,7 @@ export default function TaskModal({
         )}
 
         {error && (
-          <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <p className="mt-3 rounded-lg bg-danger-deep/25 px-3 py-2 text-xs text-danger">
             {error}
           </p>
         )}
@@ -348,8 +348,8 @@ export default function TaskModal({
                 onClick={handleDelete}
                 className={`text-xs ${
                   confirmingDelete
-                    ? "font-medium text-red-400"
-                    : "text-neutral-500 hover:text-red-400"
+                    ? "font-medium text-danger"
+                    : "text-ink-faint hover:text-danger"
                 }`}
               >
                 {confirmingDelete ? "Confirm delete" : "Delete task"}
@@ -357,7 +357,7 @@ export default function TaskModal({
               {confirmingDelete && (
                 <button
                   onClick={() => setConfirmingDelete(false)}
-                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                  className="text-xs text-ink-faint hover:text-ink-dim"
                 >
                   Cancel
                 </button>
@@ -372,14 +372,14 @@ export default function TaskModal({
               <>
                 <button
                   onClick={onClose}
-                  className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800"
+                  className="rounded-lg px-3 py-1.5 text-sm text-ink-dim hover:bg-surf-high"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => setStep(2)}
                   disabled={!step1Valid}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                  className="rounded-lg bg-ember px-3 py-1.5 text-sm font-medium text-on-ember hover:bg-ember-light disabled:opacity-40"
                 >
                   Next →
                 </button>
@@ -388,14 +388,14 @@ export default function TaskModal({
               <>
                 <button
                   onClick={() => setStep(1)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800"
+                  className="rounded-lg px-3 py-1.5 text-sm text-ink-dim hover:bg-surf-high"
                 >
                   ← Back
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={!step1Valid || !step2Valid || saving}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                  className="rounded-lg bg-ember px-3 py-1.5 text-sm font-medium text-on-ember hover:bg-ember-light disabled:opacity-40"
                 >
                   {isEditing ? "Save" : "Create"}
                 </button>
@@ -420,7 +420,7 @@ function StepPip({
   return (
     <span
       className={`whitespace-nowrap ${
-        active ? "font-medium text-red-400" : done ? "text-neutral-400" : "text-neutral-600"
+        active ? "font-medium text-ember" : done ? "text-ink-dim" : "text-ink-ghost"
       }`}
     >
       {label}
@@ -446,13 +446,13 @@ function Field({
 }) {
   const Tag = plain ? "div" : "label";
   return (
-    <Tag className={`block text-xs text-neutral-500 ${className ?? ""}`}>
+    <Tag className={`block text-xs text-ink-faint ${className ?? ""}`}>
       <span className="mb-1 block">
         {label}
-        {required && <span className="ml-0.5 text-red-500">*</span>}
+        {required && <span className="ml-0.5 text-ember">*</span>}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-[11px] text-neutral-600">{hint}</span>}
+      {hint && <span className="mt-1 block text-[11px] text-ink-ghost">{hint}</span>}
     </Tag>
   );
 }

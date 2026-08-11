@@ -74,18 +74,18 @@ export const STATUS_COLORS: Record<
   { dot: string; chip: string; ring: string }
 > = {
   todo: {
-    dot: "bg-neutral-500",
-    chip: "bg-neutral-500/15 text-neutral-300 hover:bg-neutral-500/25",
-    ring: "ring-neutral-500/40",
+    dot: "bg-ink-faint",
+    chip: "bg-surf-high text-ink-dim hover:bg-surf-highest",
+    ring: "ring-ink-faint/40",
   },
   doing: {
-    dot: "bg-red-500",
-    chip: "bg-red-500/15 text-red-300 hover:bg-red-500/25",
-    ring: "ring-red-500/40",
+    dot: "bg-ember",
+    chip: "bg-ember-deep/50 text-on-ember-deep hover:bg-ember-deep/70",
+    ring: "ring-ember/40",
   },
   done: {
-    dot: "bg-emerald-500",
-    chip: "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 line-through decoration-emerald-500/50",
-    ring: "ring-emerald-500/40",
+    dot: "bg-success",
+    chip: "bg-success-deep/50 text-on-success-deep hover:bg-success-deep/70 line-through decoration-success/50",
+    ring: "ring-success/40",
   },
 };
