@@ -20,12 +20,20 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { STATUSES, STATUS_COLORS, Task, TaskStatus } from "@/lib/supabase";
+import {
+  EFFORT_LABELS,
+  STATUSES,
+  STATUS_COLORS,
+  Task,
+  TaskStatus,
+  isDefined,
+} from "@/lib/supabase";
 
 const columnDropId = (status: TaskStatus) => `column-${status}`;
 
 export default function KanbanBoard({
   tasksByStatus,
+  goalTitles,
   canEdit,
   onAdd,
   onOpen,
@@ -33,6 +41,7 @@ export default function KanbanBoard({
   onCardMove,
 }: {
   tasksByStatus: Record<TaskStatus, Task[]>;
+  goalTitles: Record<string, string>;
   canEdit: boolean;
   onAdd: (status: TaskStatus) => void;
   onOpen: (task: Task) => void;
@@ -99,6 +108,7 @@ export default function KanbanBoard({
             status={col.key}
             label={col.label}
             tasks={tasksByStatus[col.key]}
+            goalTitles={goalTitles}
             canEdit={canEdit}
             onAdd={onAdd}
             onOpen={onOpen}
@@ -108,7 +118,9 @@ export default function KanbanBoard({
       </div>
 
       <DragOverlay>
-        {activeTask && <Card task={activeTask} canEdit={false} />}
+        {activeTask && (
+          <Card task={activeTask} goalTitles={goalTitles} canEdit={false} />
+        )}
       </DragOverlay>
     </DndContext>
   );
@@ -118,6 +130,7 @@ function Column({
   status,
   label,
   tasks,
+  goalTitles,
   canEdit,
   onAdd,
   onOpen,
@@ -126,6 +139,7 @@ function Column({
   status: TaskStatus;
   label: string;
   tasks: Task[];
+  goalTitles: Record<string, string>;
   canEdit: boolean;
   onAdd: (status: TaskStatus) => void;
   onOpen: (task: Task) => void;
@@ -154,6 +168,7 @@ function Column({
             <SortableCard
               key={task.id}
               task={task}
+              goalTitles={goalTitles}
               canEdit={canEdit}
               onOpen={onOpen}
               onDelete={onDelete}
@@ -176,11 +191,13 @@ function Column({
 
 function SortableCard({
   task,
+  goalTitles,
   canEdit,
   onOpen,
   onDelete,
 }: {
   task: Task;
+  goalTitles: Record<string, string>;
   canEdit: boolean;
   onOpen: (task: Task) => void;
   onDelete: (task: Task) => void;
@@ -203,24 +220,58 @@ function SortableCard({
       onClick={() => (canEdit ? onOpen(task) : setExpanded((e) => !e))}
       className={`touch-none ${isDragging ? "opacity-40" : ""}`}
     >
-      <Card task={task} canEdit={canEdit} onDelete={onDelete} expanded={expanded} />
+      <Card
+        task={task}
+        goalTitles={goalTitles}
+        canEdit={canEdit}
+        onDelete={onDelete}
+        expanded={expanded}
+      />
     </div>
   );
 }
 
 function Card({
   task,
+  goalTitles,
   canEdit,
   onDelete,
   expanded,
 }: {
   task: Task;
+  goalTitles: Record<string, string>;
   canEdit: boolean;
   onDelete?: (task: Task) => void;
   expanded?: boolean;
 }) {
+  const goalTitle = task.goal_id ? goalTitles[task.goal_id] : null;
+  const needsDefining = !isDefined(task);
+
   return (
-    <div className="group relative cursor-pointer rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:border-neutral-700 hover:bg-neutral-800">
+    <div
+      className={`group relative cursor-pointer rounded-xl border bg-neutral-900 p-3 text-left text-sm shadow-sm transition hover:bg-neutral-800 ${
+        needsDefining
+          ? "border-red-600/50 hover:border-red-600"
+          : "border-neutral-800 hover:border-neutral-700"
+      }`}
+    >
+      <div className="mb-1 flex items-center gap-1.5 pr-5 text-[11px]">
+        {goalTitle ? (
+          <span className="truncate rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400">
+            {goalTitle}
+          </span>
+        ) : (
+          <span className="shrink-0 rounded bg-red-600/20 px-1.5 py-0.5 font-medium text-red-400">
+            No goal
+          </span>
+        )}
+        {task.effort && (
+          <span className="ml-auto shrink-0 text-neutral-600">
+            {EFFORT_LABELS[task.effort]}
+          </span>
+        )}
+      </div>
+
       <div
         className={
           task.status === "done"
@@ -230,13 +281,29 @@ function Card({
       >
         {task.title}
       </div>
-      {task.description && (
-        <div
-          className={`mt-1 pr-5 text-xs text-neutral-500 ${
-            expanded ? "whitespace-pre-wrap" : "truncate"
-          }`}
-        >
-          {task.description}
+
+      {/* The next action is what you actually do, so it outranks the notes. */}
+      {task.next_action ? (
+        <div className="mt-1 truncate pr-5 text-xs text-neutral-500">
+          → {task.next_action}
+        </div>
+      ) : (
+        <div className="mt-1 pr-5 text-xs text-red-400/80">
+          → no next step defined
+        </div>
+      )}
+
+      {expanded && (
+        <div className="mt-2 flex flex-col gap-1 border-t border-neutral-800 pt-2 text-xs text-neutral-500">
+          {task.outcome && (
+            <p className="whitespace-pre-wrap">
+              <span className="text-neutral-600">Done when: </span>
+              {task.outcome}
+            </p>
+          )}
+          {task.description && (
+            <p className="whitespace-pre-wrap">{task.description}</p>
+          )}
         </div>
       )}
 

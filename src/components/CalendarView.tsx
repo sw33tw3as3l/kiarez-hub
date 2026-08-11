@@ -122,7 +122,7 @@ export default function CalendarView({
                 <span
                   className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${
                     isToday
-                      ? "bg-blue-600 font-semibold text-white"
+                      ? "bg-red-600 font-semibold text-white"
                       : "text-neutral-400"
                   }`}
                 >

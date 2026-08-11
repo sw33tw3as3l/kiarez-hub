@@ -44,7 +44,7 @@ export default function UnlockModal({
           className={`w-full rounded-lg border bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none ${
             error
               ? "border-red-500/60 focus:border-red-500"
-              : "border-neutral-800 focus:border-neutral-600"
+              : "border-neutral-800 focus:border-red-600"
           }`}
         />
         {error && (
@@ -59,7 +59,7 @@ export default function UnlockModal({
           </button>
           <button
             onClick={submit}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500"
           >
             Unlock
           </button>

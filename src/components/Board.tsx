@@ -1,19 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, Task, TaskCategory, TaskStatus } from "@/lib/supabase";
+import { supabase, Goal, Task, TaskCategory, TaskStatus } from "@/lib/supabase";
 import { addDays, fmtDate } from "@/lib/date";
 import { randomFunLabel } from "@/lib/funLabels";
 import KanbanBoard from "@/components/KanbanBoard";
 import CalendarView from "@/components/CalendarView";
+import GoalsView from "@/components/GoalsView";
 import TaskModal, { TaskDraft } from "@/components/TaskModal";
+import GoalModal, { GoalDraft } from "@/components/GoalModal";
 import UnlockModal from "@/components/UnlockModal";
 
 const EDIT_PIN = process.env.NEXT_PUBLIC_EDIT_PIN;
 
+const VIEWS = [
+  { key: "board", label: "Board" },
+  { key: "calendar", label: "Calendar" },
+  { key: "longterm", label: "Long-term" },
+  { key: "goals", label: "Goals" },
+] as const;
+
+type View = (typeof VIEWS)[number]["key"];
+
 type ModalState =
   | { mode: "create"; category: TaskCategory; status?: TaskStatus; date?: string }
   | { mode: "edit"; task: Task }
+  | null;
+
+type GoalModalState =
+  | { mode: "create" }
+  | { mode: "edit"; goal: Goal }
   | null;
 
 function groupByStatus(items: Task[]) {
@@ -33,9 +49,11 @@ function positionsFor(items: Task[], skipId?: string) {
 
 export default function Board() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [view, setView] = useState<"board" | "calendar" | "longterm">("board");
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [view, setView] = useState<View>("board");
   const [canEdit, setCanEdit] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
+  const [goalModal, setGoalModal] = useState<GoalModalState>(null);
   const [unlocking, setUnlocking] = useState(false);
   const todayStr = fmtDate(new Date());
   const [selectedDay, setSelectedDay] = useState(todayStr);
@@ -49,12 +67,18 @@ export default function Board() {
   }, []);
 
   useEffect(() => {
-    const load = () =>
+    const load = () => {
       supabase
         .from("tasks")
         .select("*")
         .order("position", { ascending: true })
         .then(({ data }) => setTasks(data ?? []));
+      supabase
+        .from("goals")
+        .select("*")
+        .order("position", { ascending: true })
+        .then(({ data }) => setGoals(data ?? []));
+    };
 
     load();
 
@@ -71,6 +95,11 @@ export default function Board() {
         { event: "*", schema: "public", table: "tasks" },
         debouncedLoad
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "goals" },
+        debouncedLoad
+      )
       .subscribe();
 
     return () => {
@@ -78,6 +107,11 @@ export default function Board() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const goalTitles = useMemo(
+    () => Object.fromEntries(goals.map((g) => [g.id, g.title])),
+    [goals]
+  );
 
   const dayTasksByStatus = useMemo(() => {
     return groupByStatus(
@@ -105,7 +139,7 @@ export default function Board() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (view !== "board" || modal || unlocking) return;
+      if (view !== "board" || modal || goalModal || unlocking) return;
       const target = e.target as HTMLElement;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
 
@@ -115,7 +149,7 @@ export default function Board() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [view, modal, unlocking, todayStr]);
+  }, [view, modal, goalModal, unlocking, todayStr]);
 
   function tryUnlock(pin: string) {
     if (EDIT_PIN && pin === EDIT_PIN) {
@@ -125,33 +159,49 @@ export default function Board() {
     return false;
   }
 
+  /** Resolves the draft's goal, creating one first if the user typed a new name. */
+  async function resolveGoalId(draft: TaskDraft) {
+    if (!draft.newGoalTitle) return draft.goal_id || null;
+    const { data, error } = await supabase
+      .from("goals")
+      .insert({ title: draft.newGoalTitle, position: goals.length })
+      .select()
+      .single();
+    if (error) throw error;
+    setGoals((prev) => [...prev, data as Goal]);
+    return (data as Goal).id;
+  }
+
   async function handleSave(draft: TaskDraft) {
+    const goalId = await resolveGoalId(draft);
+    const isBoard = draft.category === "board";
+
+    const fields = {
+      title: draft.title,
+      description: draft.description || null,
+      status: draft.status,
+      category: draft.category,
+      due_date: isBoard ? draft.due_date || null : null,
+      due_time: isBoard ? draft.due_time || null : null,
+      goal_id: goalId,
+      outcome: draft.outcome,
+      effort: draft.effort,
+      next_action: draft.next_action,
+    };
+
     if (modal?.mode === "edit") {
       const { error } = await supabase
         .from("tasks")
-        .update({
-          title: draft.title,
-          description: draft.description || null,
-          status: draft.status,
-          due_date: draft.due_date || null,
-          due_time: draft.due_time || null,
-        })
+        .update(fields)
         .eq("id", modal.task.id);
       if (error) throw error;
     } else if (modal?.mode === "create") {
-      const category = modal.category;
       const subset =
-        category === "longterm" ? longtermByStatus : dayTasksByStatus;
+        draft.category === "longterm" ? longtermByStatus : dayTasksByStatus;
       const position = subset[draft.status]?.length ?? 0;
-      const { error } = await supabase.from("tasks").insert({
-        title: draft.title,
-        description: draft.description || null,
-        status: draft.status,
-        category,
-        due_date: category === "board" ? draft.due_date || null : null,
-        due_time: category === "board" ? draft.due_time || null : null,
-        position,
-      });
+      const { error } = await supabase
+        .from("tasks")
+        .insert({ ...fields, position });
       if (error) throw error;
     }
   }
@@ -162,6 +212,35 @@ export default function Board() {
       .from("tasks")
       .delete()
       .eq("id", modal.task.id);
+    if (error) throw error;
+  }
+
+  async function handleGoalSave(draft: GoalDraft) {
+    const fields = {
+      title: draft.title,
+      description: draft.description || null,
+      target_date: draft.target_date || null,
+    };
+    if (goalModal?.mode === "edit") {
+      const { error } = await supabase
+        .from("goals")
+        .update(fields)
+        .eq("id", goalModal.goal.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("goals")
+        .insert({ ...fields, position: goals.length });
+      if (error) throw error;
+    }
+  }
+
+  async function handleGoalDelete() {
+    if (goalModal?.mode !== "edit") return;
+    const { error } = await supabase
+      .from("goals")
+      .delete()
+      .eq("id", goalModal.goal.id);
     if (error) throw error;
   }
 
@@ -209,13 +288,11 @@ export default function Board() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-sm font-bold text-white">
             K
           </div>
           <div className="leading-tight">
-            <h1 className="text-sm font-semibold tracking-tight">
-              KiaRez Hub
-            </h1>
+            <h1 className="text-sm font-semibold tracking-tight">KiaRez Hub</h1>
             <p className="hidden text-xs text-neutral-500 sm:block">
               {greeting || "Personal tasks & calendar"}
             </p>
@@ -224,40 +301,23 @@ export default function Board() {
 
         <div className="flex items-center gap-3">
           <div className="flex rounded-lg border border-neutral-800 p-0.5 text-sm">
-            <button
-              onClick={() => setView("board")}
-              className={`rounded-md px-3 py-1.5 transition ${
-                view === "board"
-                  ? "bg-neutral-800 text-neutral-100"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              Board
-            </button>
-            <button
-              onClick={() => setView("calendar")}
-              className={`rounded-md px-3 py-1.5 transition ${
-                view === "calendar"
-                  ? "bg-neutral-800 text-neutral-100"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              Calendar
-            </button>
-            <button
-              onClick={() => setView("longterm")}
-              className={`rounded-md px-3 py-1.5 transition ${
-                view === "longterm"
-                  ? "bg-neutral-800 text-neutral-100"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              Long-term
-            </button>
+            {VIEWS.map((v) => (
+              <button
+                key={v.key}
+                onClick={() => setView(v.key)}
+                className={`rounded-md px-3 py-1.5 transition ${
+                  view === v.key
+                    ? "bg-red-600 font-medium text-white"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
           </div>
 
           {canEdit ? (
-            <span className="whitespace-nowrap text-xs font-medium text-emerald-400">
+            <span className="whitespace-nowrap text-xs font-medium text-red-400">
               Editing
             </span>
           ) : (
@@ -284,7 +344,7 @@ export default function Board() {
               <h2
                 className={`w-56 text-center text-sm font-semibold ${
                   selectedDay === todayStr
-                    ? "rounded-full bg-blue-600/15 py-1 text-blue-400"
+                    ? "rounded-full bg-red-600/15 py-1 text-red-400"
                     : "text-neutral-100"
                 }`}
               >
@@ -306,6 +366,7 @@ export default function Board() {
             </div>
             <KanbanBoard
               tasksByStatus={dayTasksByStatus}
+              goalTitles={goalTitles}
               canEdit={canEdit}
               onAdd={(status) =>
                 setModal({
@@ -339,6 +400,7 @@ export default function Board() {
           <div className="pt-6">
             <KanbanBoard
               tasksByStatus={longtermByStatus}
+              goalTitles={goalTitles}
               canEdit={canEdit}
               onAdd={(status) =>
                 setModal({ mode: "create", category: "longterm", status })
@@ -351,6 +413,17 @@ export default function Board() {
             />
           </div>
         )}
+
+        {view === "goals" && (
+          <GoalsView
+            goals={goals}
+            tasks={tasks}
+            canEdit={canEdit}
+            onAddGoal={() => setGoalModal({ mode: "create" })}
+            onOpenGoal={(goal) => canEdit && setGoalModal({ mode: "edit", goal })}
+            onOpenTask={(task) => canEdit && setModal({ mode: "edit", task })}
+          />
+        )}
       </div>
 
       {modal && (
@@ -359,9 +432,19 @@ export default function Board() {
           category={modal.mode === "edit" ? modal.task.category : modal.category}
           initialStatus={modal.mode === "create" ? modal.status : undefined}
           initialDate={modal.mode === "create" ? modal.date : undefined}
+          goals={goals}
           onClose={() => setModal(null)}
           onSave={handleSave}
           onDelete={modal.mode === "edit" ? handleDelete : undefined}
+        />
+      )}
+
+      {goalModal && (
+        <GoalModal
+          goal={goalModal.mode === "edit" ? goalModal.goal : null}
+          onClose={() => setGoalModal(null)}
+          onSave={handleGoalSave}
+          onDelete={goalModal.mode === "edit" ? handleGoalDelete : undefined}
         />
       )}
 
