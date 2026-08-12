@@ -282,9 +282,30 @@ function Card({
         {task.title}
       </div>
 
+      {/* The outcome is the task's exit condition, so it sits on the card face
+          rather than behind a click. Clamped until the card is expanded. */}
+      {task.outcome ? (
+        <div
+          className={`mt-1.5 pr-5 text-xs text-ink-dim ${
+            expanded ? "whitespace-pre-wrap" : "line-clamp-2"
+          }`}
+        >
+          <span className="text-ink-ghost">Done when: </span>
+          {task.outcome}
+        </div>
+      ) : (
+        <div className="mt-1.5 pr-5 text-xs text-gold/70">
+          no definition of done
+        </div>
+      )}
+
       {/* The next action is what you actually do, so it outranks the notes. */}
       {task.next_action ? (
-        <div className="mt-1 truncate pr-5 text-xs text-ink-faint">
+        <div
+          className={`mt-1 pr-5 text-xs text-ink-faint ${
+            expanded ? "whitespace-pre-wrap" : "truncate"
+          }`}
+        >
           → {task.next_action}
         </div>
       ) : (
@@ -293,17 +314,9 @@ function Card({
         </div>
       )}
 
-      {expanded && (
-        <div className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs text-ink-faint">
-          {task.outcome && (
-            <p className="whitespace-pre-wrap">
-              <span className="text-ink-ghost">Done when: </span>
-              {task.outcome}
-            </p>
-          )}
-          {task.description && (
-            <p className="whitespace-pre-wrap">{task.description}</p>
-          )}
+      {expanded && task.description && (
+        <div className="mt-2 border-t border-line pt-2 text-xs whitespace-pre-wrap text-ink-faint">
+          {task.description}
         </div>
       )}
 
