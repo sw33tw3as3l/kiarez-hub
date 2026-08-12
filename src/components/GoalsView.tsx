@@ -121,7 +121,7 @@ function GoalCard({
   const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
 
   return (
-    <div className="flex flex-col rounded-2xl border border-line bg-surf-low p-4">
+    <div className="flex flex-col rounded-2xl border border-line bg-surf-low/70 p-4 backdrop-blur-md">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-ink">

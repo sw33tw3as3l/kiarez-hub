@@ -59,17 +59,44 @@ body {
   color: #763228;
 }
 
-/* Warm ember glow bleeding down from the top, so the page reads as lit
-   rather than flat. Fixed and behind everything, no layout cost. */
+/*
+ * Wallpaper backdrop. The source is the same Cyberpunk 2077 image the system
+ * palette above was generated from, resized and re-encoded into public/
+ * (2560px desktop, 1280px mobile) to keep it under ~140KB.
+ *
+ * NOTE: the URL carries the basePath from next.config.ts by hand — CSS cannot
+ * read it. If basePath changes, change it here too or the backdrop 404s.
+ */
+:root {
+  --bg-image: url("/kiarez-hub/bg.webp");
+}
+
+@media (max-width: 900px) {
+  :root {
+    --bg-image: url("/kiarez-hub/bg-sm.webp");
+  }
+}
+
+/* Fixed and behind everything, so it costs no layout and doesn't scroll.
+   The scrim is deliberately heavy: the board is dense small text, and the
+   wallpaper has to read as atmosphere rather than compete with it. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(70rem 32rem at 50% -12rem, rgb(150 26 15 / 0.5), transparent 70%),
-    radial-gradient(40rem 24rem at 100% 0, rgb(239 191 114 / 0.07), transparent 70%);
+  background-image:
+    radial-gradient(70rem 32rem at 50% -12rem, rgb(150 26 15 / 0.28), transparent 70%),
+    linear-gradient(
+      rgb(29 16 14 / 0.86),
+      rgb(29 16 14 / 0.68) 45%,
+      rgb(29 16 14 / 0.9)
+    ),
+    var(--bg-image);
+  background-position: center, center, center 42%;
+  background-size: auto, auto, cover;
+  background-repeat: no-repeat;
 }
 
 /* Native date/time pickers ship a blue-white calendar icon; warm it up. */

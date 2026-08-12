@@ -148,7 +148,7 @@ function Column({
   const { setNodeRef } = useDroppable({ id: columnDropId(status) });
 
   return (
-    <div className="rounded-2xl bg-surf-low p-3">
+    <div className="rounded-2xl bg-surf-low/45 p-3 backdrop-blur-md">
       <div className="mb-3 flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <span
@@ -249,7 +249,7 @@ function Card({
 
   return (
     <div
-      className={`group relative cursor-pointer rounded-xl border bg-surf p-3 text-left text-sm shadow-sm transition hover:bg-surf-high ${
+      className={`group relative cursor-pointer rounded-xl border bg-surf/85 p-3 backdrop-blur-sm text-left text-sm shadow-sm transition hover:bg-surf-high ${
         needsDefining
           ? "border-gold-deep hover:border-gold"
           : "border-line hover:border-line-strong"

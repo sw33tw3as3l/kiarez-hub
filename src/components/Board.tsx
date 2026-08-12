@@ -285,8 +285,10 @@ export default function Board() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas text-ink">
-      <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
+    // No background color here: the wallpaper backdrop lives on body::before,
+    // and an opaque root element would cover it.
+    <div className="min-h-screen text-ink">
+      <header className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-line bg-canvas/50 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ember text-sm font-bold text-on-ember">
             K
