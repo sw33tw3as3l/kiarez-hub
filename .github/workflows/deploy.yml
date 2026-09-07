@@ -28,6 +28,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_EDIT_PIN: ${{ secrets.NEXT_PUBLIC_EDIT_PIN }}
+      - run: npm run protect
+        env:
+          STATICRYPT_PASSWORD: ${{ secrets.SITE_PASSWORD }}
       - run: touch out/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
