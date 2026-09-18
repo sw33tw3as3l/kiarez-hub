@@ -140,9 +140,17 @@ Telegram — 2026-09-18
   per check    3m
 ```
 
-Telegram and Chrome are watched by default. Time is only recorded for apps on
-the watchlist, and a window focused for more than 15 minutes without a switch
-stops counting — that's you walking away, not you working.
+Time is only recorded for apps on the watchlist, and only while you are
+actually there. "Focused" and "in front of you" are not the same thing, so:
+
+- **A locked screen counts for nothing.** When the session locks, the idle
+  minutes that preceded the lock are deducted from what was already banked —
+  hypridle locks after five idle minutes here, so five minutes come back off
+  (`SPACE_IDLE_BEFORE_LOCK` to match a different timeout).
+- **A single unbroken stretch caps at 20 minutes** where no session manager
+  answers. A window left in front overnight cannot bank the night.
+- **Unread counters in window titles are ignored**, so an arriving message
+  isn't mistaken for you switching chats.
 
 It starts with your Hyprland session via `~/.config/hypr/custom/execs.lua`.
 `scripts/space-track.service` is there if you'd rather systemd supervise it.

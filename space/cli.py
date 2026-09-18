@@ -343,7 +343,8 @@ def cmd_watch(conn, a):
 
 
 def cmd_review(conn, a):
-    print(f"{ACC}Where the last 7 days went{OFF}")
+    print(f"{ACC}Where the last 7 days went{OFF}  "
+          f"{DIM}keyboard focus only — idle and locked screens excluded{OFF}")
     totals = {}
     for i in range(7):
         for app, label, color, secs in db.usage(conn, add_days(today(), -i)):

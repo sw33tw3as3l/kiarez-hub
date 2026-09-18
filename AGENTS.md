@@ -25,8 +25,14 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
   writable day — yesterday until 04:00, then today — because the question is
   asked at midnight, when the day being reported on has just ended. Nothing
   older is ever writable, by design.
-- `space/track.py` — Hyprland focus tracker. Banks seconds, checks (focus
-  gained), interactions (title changes while focused) and the longest stretch,
+- `space/track.py` — Hyprland focus tracker. Records *keyboard focus*, not
+  "app is open": nothing accrues while the session is locked or inactive, a
+  lock transition refunds the idle minutes that preceded it (already-written
+  rows included, via `db.refund_usage`), and one unbroken stretch caps at
+  `MAX_STRETCH`. `clean_title()` strips unread counters so an arriving message
+  isn't counted as an interaction. `db.beat()` each flush is what lets the
+  board's status rail say whether anything is recording. Banks seconds, checks
+  (focus gained), interactions (real title changes) and the longest stretch,
   plus an hourly breakdown, into `app_usage` / `app_usage_hours`. Each watched
   app carries a colour; `red` is the one with meaning — `usage_total(color=
   "red")` is what the day strip calls distraction.

@@ -96,6 +96,13 @@ create table if not exists app_usage_hours (
   primary key (date, hour, app)
 );
 
+-- The tracker stamps this every flush, so the board can say whether focus
+-- time is actually being recorded rather than quietly assuming it is.
+create table if not exists heartbeat (
+  name text primary key,
+  at   text not null
+);
+
 -- Apps whose focused time is recorded. `color` is how the app is shown and
 -- what it means: red is time spent against you and is what the day strip
 -- calls distraction; everything else is simply time accounted for.
@@ -463,6 +470,39 @@ def add_usage(conn, date_str: str, app: str, seconds: int, *, opens: int = 0,
                on conflict(date, hour, app) do update
                  set seconds = seconds + excluded.seconds""",
             (date_str, int(hour), app, int(seconds)))
+    conn.commit()
+
+
+def beat(conn, name: str = "track") -> None:
+    conn.execute("""insert into heartbeat (name, at) values (?,?)
+                    on conflict(name) do update set at = excluded.at""",
+                 (name, now()))
+    conn.commit()
+
+
+def last_beat(conn, name: str = "track") -> float | None:
+    """Seconds since the tracker last wrote, or None if it never has."""
+    row = conn.execute("select at from heartbeat where name = ?",
+                       (name,)).fetchone()
+    if not row:
+        return None
+    from .model import parse
+    return (utc_now() - parse(row["at"])).total_seconds()
+
+
+def refund_usage(conn, date_str: str, app: str, seconds: int) -> None:
+    """Take back time already written that turned out to be idle."""
+    conn.execute(
+        """update app_usage set seconds = max(0, seconds - ?),
+                                 longest = max(0, longest - ?)
+            where date = ? and app = ?""", (int(seconds), int(seconds),
+                                            date_str, app))
+    conn.execute(
+        """update app_usage_hours set seconds = max(0, seconds - ?)
+            where date = ? and app = ?
+              and hour = (select max(hour) from app_usage_hours
+                           where date = ? and app = ?)""",
+        (int(seconds), date_str, app, date_str, app))
     conn.commit()
 
 

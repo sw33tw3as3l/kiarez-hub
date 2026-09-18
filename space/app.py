@@ -16,6 +16,7 @@ from .model import (
     today,
 )
 from . import fx
+from .theme import fx_enabled  # noqa: F401
 from .ui import (
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
     C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN, Field, attr, confirm,
@@ -60,6 +61,7 @@ class App:
         self.greeting = random.choice(GREETINGS)
         self.pulse = fx.Pulse(1.3)
         self.message_at = 0.0
+        self.glitch_until = 0.0
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
@@ -145,7 +147,7 @@ class App:
         self.stdscr.erase()
         h, w = self.stdscr.getmaxyx()
         self.draw_header(w)
-        body = h - 4
+        body = h - 5
         {"today": self.draw_day, "calendar": self.draw_calendar,
          "inbox": self.draw_inbox, "tree": self.draw_tree,
          "review": self.draw_review}[self.view](3, body, w)
@@ -153,12 +155,14 @@ class App:
         self.stdscr.refresh()
 
     def draw_header(self, w):
-        put(self.stdscr, 0, 2, "◤", attr(C_NEON, True))
-        put(self.stdscr, 0, 4, "KIAREZ", attr(C_NEON, True))
-        put(self.stdscr, 0, 11, "SPACE", attr(C_ACCENT, True))
-        put(self.stdscr, 0, 18, self.greeting, attr(C_VIOLET))
+        put(self.stdscr, 0, 1, "◤", attr(C_NEON, True))
+        put(self.stdscr, 0, 3, "KIAREZ", attr(C_NEON, True))
+        put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
+        put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
+        put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
+        put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
-        x = w - 2
+        x = w - 4
         for i, (key, label) in enumerate(reversed(VIEWS)):
             n = len(VIEWS) - i
             chip = f" {n} {label} "
@@ -167,9 +171,14 @@ class App:
             put(self.stdscr, 0, x, chip,
                 attr(C_SEL_ALT, True) if on else attr(C_DIM))
 
-        # A rule that is brighter under the live view — the eye follows it.
-        hline(self.stdscr, 1, 2, w - 4, attr(C_FRAME))
-        put(self.stdscr, 1, 2, "━" * 14, attr(C_NEON))
+        # The rule burns under the live view and fades away from it. On a
+        # view change it tears for a couple of frames, then settles.
+        rule = "─" * (w - 3)
+        if time.monotonic() < self.glitch_until:
+            rule = fx.glitched(rule, 0.35)
+        put(self.stdscr, 1, 1, rule, attr(C_FRAME))
+        put(self.stdscr, 1, 1, "━" * 18, attr(C_NEON))
+        put(self.stdscr, 1, 19, "╸", attr(C_ACCENT))
 
     def day_strip(self, y, w):
         """The line that says whether this day was real."""
@@ -184,16 +193,30 @@ class App:
         put(self.stdscr, y, 2, d.strftime("%a %d %b %Y").upper() + label,
             attr(C_ACCENT, True))
 
-        bits = [(f"◆ ship {shipped}/{done}", C_DONE if shipped else C_DIM),
-                (f"▲ distraction {fmt_minutes(distraction)}",
-                 C_WARN if distraction else C_DIM),
-                (f"◇ tracked {fmt_minutes(tracked)}", C_DIM)]
         x = 34
-        for text, color in bits:
-            hot = color is C_WARN and distraction >= 60
-            put(self.stdscr, y, x, text,
-                attr(color, hot and self.pulse.on(0.55)))
-            x += len(text) + 4
+        put(self.stdscr, y, x, f"◆ ship {shipped}/{done}",
+            attr(C_DONE if shipped else C_DIM))
+        x += 16
+
+        # A gauge, not a number: four hours of red is the full bar.
+        segments = 10
+        filled = min(segments, round(distraction / 240 * segments))
+        hot = distraction >= 60
+        put(self.stdscr, y, x, "▲", attr(C_WARN if hot else C_DIM))
+        put(self.stdscr, y, x + 2, "▰" * filled,
+            attr(C_WARN, hot and self.pulse.on(0.55)))
+        put(self.stdscr, y, x + 2 + filled, "▱" * (segments - filled), attr(C_DIM))
+        put(self.stdscr, y, x + 3 + segments, fmt_minutes(distraction),
+            attr(C_WARN if hot else C_DIM))
+        x += segments + 11
+
+        week = [db.usage_total(self.conn, add_days(self.day, -i), color="red")
+                for i in range(6, -1, -1)]
+        if any(week):
+            put(self.stdscr, y, x, fx.sparkline(week), attr(C_VIOLET))
+            x += 9
+        put(self.stdscr, y, x, f"◇ {fmt_minutes(tracked)}", attr(C_DIM))
+        x += 12
         if log.answered:
             room = max(10, (w - x - 6) // 2)
             put(self.stdscr, y, x, f"did: {ellipsis(log.did, room)}", attr(C_DONE))
@@ -448,6 +471,9 @@ class App:
 
         # 1. Where the last seven days actually went.
         put(self.stdscr, y, 2, "Where the last 7 days went", attr(C_ACCENT, True))
+        put(self.stdscr, y, 29,
+            "keyboard focus only — idle time and a locked screen don't count",
+            attr(C_DIM))
         y += 1
         span = [add_days(today(), -i) for i in range(6, -1, -1)]   # oldest first
         matrix = db.usage_matrix(self.conn, span)
@@ -531,7 +557,27 @@ class App:
         put(self.stdscr, top + height - 2, 2,
             "x kills it · S sends it back to the inbox", attr(C_DIM))
 
+    def status_rail(self, h, w):
+        """The bottom rail: is anything actually recording, and what time is it."""
+        age = db.last_beat(self.conn)
+        if age is None:
+            state, color = "TRACK OFFLINE", C_WARN
+        elif age < 180:
+            state, color = "TRACK ONLINE", C_DONE
+        else:
+            state, color = f"TRACK STALE {int(age // 60)}m", C_DOING
+
+        put(self.stdscr, h - 3, 1, "◣", attr(C_NEON))
+        put(self.stdscr, h - 3, 3, "▰" if color is C_DONE else "▱", attr(color))
+        put(self.stdscr, h - 3, 5, state, attr(color))
+        put(self.stdscr, h - 3, 6 + len(state), "◈", attr(C_VIOLET))
+
+        stamp = time.strftime("%a %H:%M")
+        put(self.stdscr, h - 3, max(10, w - len(stamp) - 4), stamp, attr(C_DIM))
+        put(self.stdscr, h - 3, w - 2, "◢", attr(C_NEON))
+
     def draw_footer(self, h, w):
+        self.status_rail(h, w)
         if self.message:
             fresh = time.monotonic() - self.message_at < 1.2
             put(self.stdscr, h - 2, 2, ("▸ " if fresh else "  ")
@@ -690,13 +736,19 @@ class App:
 
     # --- input --------------------------------------------------------------
 
+    def switch(self, view: str) -> None:
+        if view != self.view and fx.fx_enabled():
+            self.glitch_until = time.monotonic() + 0.22
+        self.view, self.list_row = view, 0
+
     def alive(self) -> bool:
         """Is anything on screen worth animating? Otherwise we block on input.
 
         Kept cheap and kept honest: an idle board must return False, or it
         spins at the frame rate forever for no reason.
         """
-        if time.monotonic() - self.message_at < 2.0:
+        now = time.monotonic()
+        if now < self.glitch_until or now - self.message_at < 2.0:
             return True
         if not db.day_log(self.conn, review_day()).answered:
             return True
@@ -714,10 +766,10 @@ class App:
             return True
         if ch == 9:
             i = [k for k, _ in VIEWS].index(self.view)
-            self.view, self.list_row = VIEWS[(i + 1) % len(VIEWS)][0], 0
+            self.switch(VIEWS[(i + 1) % len(VIEWS)][0])
             return True
         if ord("1") <= ch <= ord("5"):
-            self.view, self.list_row = VIEWS[ch - ord("1")][0], 0
+            self.switch(VIEWS[ch - ord("1")][0])
             return True
         if ch in (ord("a"), ord("A")) and self.view != "tree":
             self.view, self.list_row = "tree", 0
