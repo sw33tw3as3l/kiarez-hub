@@ -10,20 +10,25 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from .model import Area, Day, Task, add_days, today, utc_now
+from .model import Day, Node, Task, Tree, add_days, today, utc_now
 
 SCHEMA = """
-create table if not exists areas (
+-- A forest. parent_id null means a root. A node with children reads as an
+-- area, a leaf reads as a goal; that is derived at display time, never stored.
+create table if not exists nodes (
   id         text primary key,
+  parent_id  text references nodes(id) on delete cascade,
   name       text not null,
   position   integer not null default 0,
   created_at text not null
 );
 
+create index if not exists nodes_parent_idx on nodes (parent_id);
+
 create table if not exists tasks (
   id            text primary key,
   title         text not null,
-  area_id       text references areas(id) on delete set null,
+  node_id       text references nodes(id) on delete set null,
   day           text,                      -- null = inbox
   status        text not null default 'todo'
                   check (status in ('todo','doing','done')),
@@ -42,7 +47,7 @@ create table if not exists tasks (
 );
 
 create index if not exists tasks_day_idx    on tasks (day);
-create index if not exists tasks_area_idx   on tasks (area_id);
+create index if not exists tasks_node_idx   on tasks (node_id);
 create index if not exists tasks_status_idx on tasks (status);
 
 -- One row per day: the honest end-of-day answer to "what shipped?"
@@ -105,9 +110,9 @@ def _guard_old_schema(conn, path: Path) -> None:
     if not row:
         return
     cols = {r["name"] for r in conn.execute("pragma table_info(tasks)")}
-    if "day" not in cols:
+    if "day" not in cols or "node_id" not in cols:
         raise SystemExit(
-            f"{path} uses the old goals/long-term schema.\n"
+            f"{path} uses an older schema than this version.\n"
             f"Back it up and remove it, then start fresh:\n"
             f"  mv {path} {path}.old")
 
@@ -126,16 +131,26 @@ def _task(row) -> Task:
     return Task(**dict(row))
 
 
-def areas(conn) -> list[Area]:
-    return [Area(**dict(r)) for r in
-            conn.execute("select * from areas order by position, created_at")]
+def nodes(conn) -> list[Node]:
+    return [Node(**dict(r)) for r in
+            conn.execute("select * from nodes order by position, created_at")]
 
 
-def area_names(conn) -> dict[str, str]:
-    return {a.id: a.name for a in areas(conn)}
+def tree(conn) -> Tree:
+    items = nodes(conn)
+    children: dict[str | None, list[Node]] = {}
+    for n in items:
+        children.setdefault(n.parent_id, []).append(n)
+    return Tree(items, children)
 
 
-def tasks(conn, *, day="__any__", status=None, area_id=None,
+def node_paths(conn) -> dict[str, str]:
+    """{id: 'PayCheck › Scoring › Grade endpoint'} for every node."""
+    t = tree(conn)
+    return {n.id: t.path(n.id) for n in t.nodes}
+
+
+def tasks(conn, *, day="__any__", status=None, node_id=None,
           inbox=False) -> list[Task]:
     sql, args = "select * from tasks where 1=1", []
     if inbox:
@@ -146,9 +161,9 @@ def tasks(conn, *, day="__any__", status=None, area_id=None,
     if status:
         sql += " and status = ?"
         args.append(status)
-    if area_id:
-        sql += " and area_id = ?"
-        args.append(area_id)
+    if node_id:
+        sql += " and node_id = ?"
+        args.append(node_id)
     sql += " order by position, created_at"
     return [_task(r) for r in conn.execute(sql, args)]
 
@@ -206,26 +221,58 @@ def _next_position(conn, where="", args=()) -> int:
         args).fetchone()["p"]
 
 
-def add_area(conn, name: str) -> str:
-    aid = new_id()
-    pos = conn.execute("select coalesce(max(position), -1) + 1 p "
-                       "from areas").fetchone()["p"]
-    conn.execute("insert into areas (id, name, position, created_at) "
-                 "values (?,?,?,?)", (aid, name.strip(), pos, now()))
+def add_node(conn, name: str, parent_id: str | None = None) -> str:
+    nid = new_id()
+    pos = conn.execute(
+        "select coalesce(max(position), -1) + 1 p from nodes where parent_id is ?",
+        (parent_id,)).fetchone()["p"]
+    conn.execute("insert into nodes (id, parent_id, name, position, created_at) "
+                 "values (?,?,?,?,?)", (nid, parent_id, name.strip(), pos, now()))
     conn.commit()
-    return aid
+    return nid
 
 
-def capture(conn, title: str, *, area_id=None, day=None, **rest) -> str:
+def rename_node(conn, node_id: str, name: str) -> None:
+    conn.execute("update nodes set name = ? where id = ?", (name.strip(), node_id))
+    conn.commit()
+
+
+def move_node(conn, node_id: str, parent_id: str | None) -> str | None:
+    """Reparent a node. Returns an error string, or None on success."""
+    if node_id == parent_id:
+        return "a node can't be its own parent"
+    t = tree(conn)
+    if parent_id and parent_id in {d.id for d in t.descendants(node_id)}:
+        return "can't move a node inside its own subtree"
+    pos = conn.execute(
+        "select coalesce(max(position), -1) + 1 p from nodes where parent_id is ?",
+        (parent_id,)).fetchone()["p"]
+    conn.execute("update nodes set parent_id = ?, position = ? where id = ?",
+                 (parent_id, pos, node_id))
+    conn.commit()
+    return None
+
+
+def subtree_tasks(conn, node_id: str) -> list[Task]:
+    """Tasks on this node and everything under it."""
+    t = tree(conn)
+    ids = [node_id] + [d.id for d in t.descendants(node_id)]
+    marks = ",".join("?" * len(ids))
+    return [_task(r) for r in conn.execute(
+        f"select * from tasks where node_id in ({marks}) "
+        f"order by position, created_at", ids)]
+
+
+def capture(conn, title: str, *, node_id=None, day=None, **rest) -> str:
     """Write something down. Title is the only thing required."""
     tid = new_id()
     stamp = now()
     conn.execute(
         """insert into tasks
-             (id, title, area_id, day, status, kind, outcome, next_action,
+             (id, title, node_id, day, status, kind, outcome, next_action,
               estimate, position, created_at, touched_at)
            values (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (tid, title.strip(), area_id, day, rest.get("status", "todo"),
+        (tid, title.strip(), node_id, day, rest.get("status", "todo"),
          rest.get("kind"), (rest.get("outcome") or "").strip() or None,
          (rest.get("next_action") or "").strip() or None,
          rest.get("estimate"),

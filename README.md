@@ -13,8 +13,24 @@ space-cli       # scripting
 
 ## The model
 
-**Areas** are permanent — PayCheck, Health, Learning, Personal. They are never
-finished, have no target date, and show no progress bar. A task lives in one.
+**A tree of things you care about.** Nest as deep as you like:
+
+```
+PayCheck
+  Scoring
+    Ship the grade endpoint
+  Reduce churn
+Health
+  Gym 3x a week
+```
+
+A **branch is an area**, a **leaf is a goal** — and that is derived, not
+stored, so a goal becomes an area the moment you nest something under it and
+nothing has to be migrated. Nothing in the tree ever closes: no target dates,
+no completion, no progress bars. A task can hang off any node, branch or leaf,
+because the right place for a task is wherever you were thinking when you
+wrote it down. Counts roll up: a branch shows the totals for everything
+beneath it.
 
 **Capture is free. Committing is not.** Press `c` anywhere and type one line;
 it lands in the Inbox with no fields to fill. A task only has to be *defined*
@@ -22,7 +38,7 @@ before you can start it:
 
 | Field | Why |
 | --- | --- |
-| area | where it belongs |
+| goal | which node of the tree it serves |
 | outcome | how you'll know it's done |
 | next action | the first physical step |
 | kind | **Ship** or **Support** |
@@ -47,7 +63,7 @@ date — but the Review view knows exactly what you keep pushing.
 2. **Calendar** — the month. `✓` = you logged something that shipped, `·` =
    you logged nothing. Both are honest answers; a blank day is neither.
 3. **Inbox** — captured, not yet on a day. `s` schedules, `e` defines.
-4. **Areas** — open and shipped counts per area.
+4. **Tree** — the whole forest, foldable, with counts rolled up.
 5. **Review** — what the board would rather you didn't see: where the last
    seven days went, how far off your estimates are, and every task that has
    been untouched for two weeks or rolled forward three times.
@@ -63,7 +79,8 @@ date — but the Review view knows exactly what you keep pushing.
 | `e`, `Enter` | define / edit |
 | `s` `S` | schedule onto the open day / send back to inbox |
 | `w` | log what shipped today |
-| `a` | new area · `x` delete |
+| `a` `A` | in Tree: add a child / add a root |
+| `m` `x` | in Tree: move (reparent) / delete a node and its subtree |
 | `[` `]` `t` | previous day / next day / today |
 | `?` `q` | help / quit |
 
@@ -96,8 +113,12 @@ this repo installs it for you).
 space-cli c "something I thought of"      # capture
 space-cli today
 space-cli inbox
-space-cli define 4f2a --area paycheck --outcome "..." \
+space-cli tree
+space-cli node-add Scoring --parent paycheck
+space-cli node-mv scoring --parent health        # or --root
+space-cli define 4f2a --goal "grade endpoint" --outcome "..." \
                       --kind ship --estimate 1h --next "..."
+space-cli ls --goal paycheck --deep              # the whole subtree
 space-cli start 4f2a          # refuses if undefined
 space-cli done 4f2a
 space-cli shipped "the grade endpoint is live"

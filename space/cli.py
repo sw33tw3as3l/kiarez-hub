@@ -3,7 +3,9 @@
     space-cli c "something I thought of"     # capture, no fields
     space-cli today
     space-cli inbox
-    space-cli define 4f2a --area paycheck --outcome "..." --kind ship \
+    space-cli tree                           # the whole forest
+    space-cli node-add Scoring --parent paycheck
+    space-cli define 4f2a --goal scoring --outcome "..." --kind ship \
                           --estimate 1h --next "..."
     space-cli start 4f2a / done 4f2a
     space-cli shipped "the grade endpoint is live"
@@ -43,26 +45,26 @@ def resolve(conn, prefix: str) -> str:
     return rows[0]["id"]
 
 
-def resolve_area(conn, text: str) -> str:
-    """Match an area by id prefix or by a unique piece of its name."""
+def resolve_node(conn, text: str) -> str:
+    """Match a node by id prefix or by a unique piece of its name."""
     rows = conn.execute(
-        "select id, name from areas where id like ? or lower(name) like ?",
+        "select id, name from nodes where id like ? or lower(name) like ?",
         (text + "%", f"%{text.lower()}%")).fetchall()
     if not rows:
-        sys.exit(f"no area matching '{text}' — see `space-cli areas`")
+        sys.exit(f"no node matching '{text}' — see `space-cli tree`")
     if len(rows) > 1:
         sys.exit("'%s' matches: %s" % (text, ", ".join(r["name"] for r in rows)))
     return rows[0]["id"]
 
 
-def show(t, names):
+def show(t, paths):
     color = {"todo": DIM, "doing": ACC, "done": OK}[t.status]
     print(f"{color}{t.id[:8]}  {t.title}{OFF}")
     if not t.defined:
         print(f"          {WARN}needs {', '.join(t.missing)}{OFF}")
         return
     bits = [KIND_LABELS[t.kind], ESTIMATE_LABELS[t.estimate],
-            names.get(t.area_id, "—")]
+            paths.get(t.node_id, "—")]
     if t.actual_minutes:
         bits.append(f"actual {fmt_minutes(t.actual_minutes)}")
     if t.rolls:
@@ -80,7 +82,7 @@ def cmd_today(conn, a):
     day = a.date or today()
     db.roll_forward(conn)
     items = db.tasks(conn, day=day)
-    names = db.area_names(conn)
+    paths = db.node_paths(conn)
     shipped, done = ship_ratio(items)
     mins = db.usage_total(conn, day) // 60
     log = db.day_log(conn, day)
@@ -92,35 +94,36 @@ def cmd_today(conn, a):
         group = [t for t in items if t.status == s]
         print(f"\n{STATUS_LABELS[s]} ({len(group)})")
         for t in group:
-            show(t, names)
+            show(t, paths)
 
 
 def cmd_inbox(conn, a):
-    names = db.area_names(conn)
+    paths = db.node_paths(conn)
     items = db.tasks(conn, inbox=True)
     for t in items:
-        show(t, names)
+        show(t, paths)
     if not items:
         print(f"{DIM}inbox empty{OFF}")
 
 
 def cmd_ls(conn, a):
-    items = db.tasks(conn, day=a.date if a.date else "__any__",
-                     status=a.status,
-                     area_id=resolve_area(conn, a.area) if a.area else None)
+    node = resolve_node(conn, a.goal) if a.goal else None
+    items = (db.subtree_tasks(conn, node) if node and a.deep else
+             db.tasks(conn, day=a.date if a.date else "__any__",
+                      status=a.status, node_id=node))
     if a.json:
         print(json.dumps([asdict(t) for t in items], indent=2))
         return
-    names = db.area_names(conn)
+    paths = db.node_paths(conn)
     for t in items:
-        show(t, names)
+        show(t, paths)
 
 
 def cmd_define(conn, a):
     tid = resolve(conn, a.id)
     fields = {}
-    if a.area:
-        fields["area_id"] = resolve_area(conn, a.area)
+    if a.goal:
+        fields["node_id"] = resolve_node(conn, a.goal)
     for key, val in (("outcome", a.outcome), ("next_action", a.next_action),
                      ("kind", a.kind), ("estimate", a.estimate),
                      ("title", a.title)):
@@ -160,17 +163,42 @@ def cmd_rm(conn, a):
     print(f"deleted {tid[:8]}")
 
 
-def cmd_areas(conn, a):
-    for area in db.areas(conn):
-        items = db.tasks(conn, area_id=area.id)
-        shipped, finished = ship_ratio(items)
-        open_now = sum(t.status != "done" for t in items)
-        print(f"{ACC}{area.id[:8]}{OFF}  {area.name}  "
-              f"{DIM}{open_now} open · {shipped}/{finished} shipped{OFF}")
+def cmd_tree(conn, a):
+    t = db.tree(conn)
+    if not t.nodes:
+        print(f"{DIM}empty — space-cli node-add PayCheck{OFF}")
+        return
+    for node, depth in t.walk():
+        sub = db.subtree_tasks(conn, node.id)
+        shipped, finished = ship_ratio(sub)
+        open_now = sum(x.status != "done" for x in sub)
+        leaf = t.is_leaf(node.id)
+        name = ("  " * depth) + ("" if leaf else "▾ ") + node.name
+        print(f"{ACC}{node.id[:8]}{OFF}  {name:44} "
+              f"{DIM}{open_now} open · {shipped}/{finished} shipped"
+              f"{'' if leaf else ' (subtree)'}{OFF}")
 
 
-def cmd_area_add(conn, a):
-    print(db.add_area(conn, " ".join(a.name))[:8])
+def cmd_node_add(conn, a):
+    parent = resolve_node(conn, a.parent) if a.parent else None
+    print(db.add_node(conn, " ".join(a.name), parent)[:8])
+
+
+def cmd_node_mv(conn, a):
+    nid = resolve_node(conn, a.id)
+    parent = None if a.root else resolve_node(conn, a.parent)
+    err = db.move_node(conn, nid, parent)
+    sys.exit(err) if err else print(f"{nid[:8]} moved")
+
+
+def cmd_node_rm(conn, a):
+    nid = resolve_node(conn, a.id)
+    t = db.tree(conn)
+    below, tasks_hit = t.descendants(nid), db.subtree_tasks(conn, nid)
+    db.delete(conn, "nodes", nid)
+    print(f"deleted {nid[:8]}"
+          + (f" and {len(below)} node(s) below" if below else "")
+          + (f"; {len(tasks_hit)} task(s) lost their goal" if tasks_hit else ""))
 
 
 def cmd_shipped(conn, a):
@@ -251,12 +279,12 @@ def cmd_stats(conn, a):
     print(f"done    {row['done']} ({row['shipped']} shipped)")
     print(f"doing   {row['doing']}")
     print(f"inbox   {row['inbox']}")
-    print(f"areas   {len(db.areas(conn))}")
+    print(f"nodes   {len(db.nodes(conn))}")
     print(f"db      {db.db_path()}")
 
 
 def cmd_export(conn, a):
-    json.dump({"areas": [asdict(x) for x in db.areas(conn)],
+    json.dump({"nodes": [asdict(x) for x in db.nodes(conn)],
                "tasks": [asdict(t) for t in db.tasks(conn)],
                "days": {d: s for d, s in db.logged_days(conn).items()}},
               sys.stdout, indent=2)
@@ -292,14 +320,16 @@ def build_parser():
     s = add("ls", help="list tasks")
     s.add_argument("--date")
     s.add_argument("--status", choices=STATUS_KEYS)
-    s.add_argument("--area")
+    s.add_argument("--goal", help="node id prefix or part of its name")
+    s.add_argument("--deep", action="store_true",
+                   help="with --goal: include everything below it")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_ls)
 
     s = add("define", help="fill in what a task needs before it can start")
     s.add_argument("id")
     s.add_argument("--title")
-    s.add_argument("--area")
+    s.add_argument("--goal")
     s.add_argument("--outcome")
     s.add_argument("--next", dest="next_action")
     s.add_argument("--kind", choices=KIND_KEYS)
@@ -321,10 +351,22 @@ def build_parser():
     s.add_argument("id")
     s.set_defaults(fn=cmd_rm)
 
-    add("areas", help="list areas").set_defaults(fn=cmd_areas)
-    s = add("area-add", help="add an area")
+    add("tree", help="the whole forest").set_defaults(fn=cmd_tree)
+
+    s = add("node-add", help="add a node (a root, or a child of --parent)")
     s.add_argument("name", nargs="+")
-    s.set_defaults(fn=cmd_area_add)
+    s.add_argument("--parent")
+    s.set_defaults(fn=cmd_node_add)
+
+    s = add("node-mv", help="reparent a node")
+    s.add_argument("id")
+    s.add_argument("--parent")
+    s.add_argument("--root", action="store_true")
+    s.set_defaults(fn=cmd_node_mv)
+
+    s = add("node-rm", help="delete a node and everything under it")
+    s.add_argument("id")
+    s.set_defaults(fn=cmd_node_rm)
 
     s = add("shipped", help="log (or read) what shipped on a day")
     s.add_argument("text", nargs="*")

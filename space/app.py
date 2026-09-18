@@ -20,7 +20,7 @@ from .ui import (
 )
 
 VIEWS = [("today", "Today"), ("calendar", "Calendar"), ("inbox", "Inbox"),
-         ("areas", "Areas"), ("review", "Review")]
+         ("tree", "Tree"), ("review", "Review")]
 
 STATUS_COLOR = {"todo": C_DIM, "doing": C_DOING, "done": C_DONE}
 
@@ -32,7 +32,7 @@ HELP = [
     ("e / Enter", "define or edit"),
     ("s / S", "schedule onto the open day / send back to inbox"),
     ("w", "log what shipped today"),
-    ("a", "new area · x delete"),
+    ("a", "in Tree: add a child · A adds a root · m moves · x deletes"),
     ("[ ] t", "previous day / next day / today"),
     ("? q", "help / quit"),
 ]
@@ -46,10 +46,11 @@ class App:
         self.day = today()
         self.col = 0
         self.row = 0
-        self.list_row = 0            # inbox / areas / review cursor
+        self.list_row = 0            # inbox / tree / review cursor
         self.message = ""
         self.greeting = random.choice(GREETINGS)
         self.cal_cursor = date.fromisoformat(self.day)
+        self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
         db.close_out(conn, today())
         if rolled:
@@ -58,11 +59,34 @@ class App:
     # --- data ---------------------------------------------------------------
 
     @property
-    def areas(self):
-        return db.areas(self.conn)
+    def tree(self):
+        return db.tree(self.conn)
 
-    def area_choices(self):
-        return [(a.id, a.name) for a in self.areas]
+    def node_choices(self):
+        """Every node, indented, so the form shows where it sits."""
+        t = self.tree
+        return [(n.id, "  " * depth + n.name) for n, depth in t.walk()]
+
+    def visible_nodes(self):
+        """(node, depth) in display order, skipping collapsed subtrees."""
+        t = self.tree
+        out = []
+
+        def walk(parent, depth):
+            for n in t.kids(parent):
+                out.append((n, depth))
+                if n.id not in self.collapsed:
+                    walk(n.id, depth + 1)
+
+        walk(None, 0)
+        return out
+
+    def selected_node(self):
+        items = self.visible_nodes()
+        if not items:
+            return None
+        self.list_row = min(self.list_row, len(items) - 1)
+        return items[self.list_row][0]
 
     def columns(self):
         items = db.tasks(self.conn, day=self.day)
@@ -105,7 +129,7 @@ class App:
         self.draw_header(w)
         body = h - 4
         {"today": self.draw_day, "calendar": self.draw_calendar,
-         "inbox": self.draw_inbox, "areas": self.draw_areas,
+         "inbox": self.draw_inbox, "tree": self.draw_tree,
          "review": self.draw_review}[self.view](3, body, w)
         self.draw_footer(h, w)
         self.stdscr.refresh()
@@ -211,9 +235,9 @@ class App:
             put(self.stdscr, top + 1, 2,
                 "nothing here — c captures a line, n opens the form", attr(C_DIM))
             return
-        names = db.area_names(self.conn)
+        paths = db.node_paths(self.conn)
         put(self.stdscr, top + 1, 2, t.title, attr(C_ACCENT, True))
-        bits = [f"area: {names.get(t.area_id, '—')}",
+        bits = [f"goal: {paths.get(t.node_id, '—')}",
                 f"kind: {KIND_LABELS.get(t.kind, '—')}",
                 f"estimate: {ESTIMATE_LABELS.get(t.estimate, '—')}"]
         if t.actual_minutes:
@@ -279,7 +303,7 @@ class App:
         if start:
             put(self.stdscr, top, 2, f"↑ {start} above", attr(C_DIM))
         y = top + (1 if start else 0)
-        names = db.area_names(self.conn)
+        paths = db.node_paths(self.conn)
         for i, t in enumerate(items):
             if i < start:
                 continue
@@ -289,7 +313,7 @@ class App:
             on = i == self.list_row
             put(self.stdscr, y, 2, ("▸ " if on else "  ") + ellipsis(t.title, w - 30),
                 attr(C_SEL, True) if on else attr(C_ACCENT))
-            tail = names.get(t.area_id, "no area") if t.defined else \
+            tail = paths.get(t.node_id, "no goal") if t.defined else \
                 "needs " + ", ".join(t.missing)
             put(self.stdscr, y + 1, 4, ellipsis(tail, w - 8),
                 attr(C_DIM if t.defined else C_WARN))
@@ -297,30 +321,55 @@ class App:
         put(self.stdscr, top + height - 2, 2,
             "s puts it on the open day · e defines it · x deletes", attr(C_DIM))
 
-    def draw_areas(self, top, height, w):
-        areas = self.areas
-        put(self.stdscr, top - 1, 2, f"Areas ({len(areas)}) — permanent, never finished",
-            attr(C_HEAD, True))
-        if not areas:
+    def draw_tree(self, top, height, w):
+        items = self.visible_nodes()
+        t = self.tree
+        put(self.stdscr, top - 1, 2,
+            f"Tree ({len(t.nodes)}) — leaves are goals, branches are areas, "
+            f"nothing ever closes", attr(C_HEAD, True))
+        if not items:
             put(self.stdscr, top + 1, 2,
-                "none yet — press a (try PayCheck, Health, Learning, Personal)",
+                "empty — press A for a root (try PayCheck, Health, Learning)",
                 attr(C_DIM))
             return
-        self.list_row = min(self.list_row, len(areas) - 1)
-        y = top
-        for i, a in enumerate(areas):
+
+        self.list_row = min(self.list_row, len(items) - 1)
+        room = height - 3
+        start = max(0, min(self.list_row - room + 1, len(items) - room))
+        if start:
+            put(self.stdscr, top, 2, f"↑ {start} above", attr(C_DIM))
+        y = top + (1 if start else 0)
+
+        for i, (node, depth) in enumerate(items):
+            if i < start:
+                continue
             if y >= top + height - 2:
+                put(self.stdscr, y, 2, f"↓ {len(items) - i} more", attr(C_DIM))
                 break
-            items = db.tasks(self.conn, area_id=a.id)
-            done = sum(t.status == "done" for t in items)
-            open_now = sum(t.status != "done" for t in items)
-            shipped, finished = ship_ratio(items)
+            leaf = t.is_leaf(node.id)
+            marker = "  " if leaf else ("▾ " if node.id not in self.collapsed
+                                        else "▸ ")
+            x = 2 + depth * 2
             on = i == self.list_row
-            put(self.stdscr, y, 2, ("▸ " if on else "  ") + ellipsis(a.name, w - 40),
-                attr(C_SEL, True) if on else attr(C_ACCENT))
-            tail = f"{open_now} open · {done} done · {shipped}/{finished} shipped"
-            put(self.stdscr, y, max(2, w - len(tail) - 4), tail, attr(C_DIM))
-            y += 2
+            label = marker + node.name
+            put(self.stdscr, y, x, ("▸" if on else " ") + label,
+                attr(C_SEL, True) if on else
+                attr(C_DONE if leaf else C_ACCENT, not leaf))
+
+            own = db.tasks(self.conn, node_id=node.id)
+            sub = db.subtree_tasks(self.conn, node.id)
+            open_now = sum(k.status != "done" for k in sub)
+            shipped, finished = ship_ratio(sub)
+            tail = f"{open_now} open · {shipped}/{finished} shipped"
+            if not leaf and len(sub) != len(own):
+                tail += f" · {len(sub) - len(own)} below"
+            put(self.stdscr, y, max(x + len(label) + 3, w - len(tail) - 4), tail,
+                attr(C_DIM))
+            y += 1
+
+        put(self.stdscr, top + height - 2, 2,
+            "a child · A root · e rename · m move · x delete · h/l fold",
+            attr(C_DIM))
 
     def draw_review(self, top, height, w):
         put(self.stdscr, top - 1, 2, "Review — what the board would rather you didn't see",
@@ -404,14 +453,15 @@ class App:
             self.message = "captured to inbox"
 
     def task_form(self, task=None, day=None):
-        areas = self.area_choices()
-        if not areas:
-            self.message = "make an area first (press a) — every task lives in one"
+        choices = self.node_choices()
+        if not choices:
+            self.message = "build the tree first (press 4, then A) — a task needs a goal"
             return
         fields = [
             Field("title", "Title", required=True, value=task.title if task else ""),
-            Field("area_id", "Area", "choice", required=True, choices=areas,
-                  value=(task.area_id if task else None) or areas[0][0]),
+            Field("node_id", "Goal", "choice", required=True, choices=choices,
+                  value=(task.node_id if task else None) or choices[0][0],
+                  hint="← → walks the tree; any node works, leaf or branch"),
             Field("outcome", "Done when", required=True,
                   value=(task.outcome if task else "") or "",
                   hint="how you'll know it's finished"),
@@ -424,7 +474,7 @@ class App:
 
         def validate(v):
             return [f"{k} is required" for k, name in (
-                ("title", "title"), ("area_id", "area"), ("outcome", "outcome"),
+                ("title", "title"), ("node_id", "goal"), ("outcome", "outcome"),
                 ("kind", "kind"), ("estimate", "estimate"),
                 ("next_action", "next action")) if not str(v[k]).strip()]
 
@@ -468,6 +518,7 @@ class App:
         y = 5 + len(HELP)
         put(self.stdscr, y, 2, "How it works", attr(C_HEAD, True))
         for i, line in enumerate([
+                "The tree is permanent: a leaf is a goal, a branch is an area, nothing closes.",
                 "Capture is free; a task only has to be defined before you start it.",
                 "Unfinished work rolls to today automatically — Review shows what keeps rolling.",
                 "Ship = someone else could notice. Support = only helps you ship later.",
@@ -497,11 +548,9 @@ class App:
         if ord("1") <= ch <= ord("5"):
             self.view, self.list_row = VIEWS[ch - ord("1")][0], 0
             return True
-        if ch == ord("a"):
-            name = prompt(self.stdscr, "new area:")
-            if name and name.strip():
-                db.add_area(self.conn, name)
-                self.message = f"area '{name.strip()}' added"
+        if ch in (ord("a"), ord("A")) and self.view != "tree":
+            self.view, self.list_row = "tree", 0
+            self.message = "pick where it goes: a adds a child, A adds a root"
             return True
         if ch == ord("w"):
             self.log_shipped()
@@ -512,7 +561,7 @@ class App:
             return True
 
         return {"today": self.handle_day, "calendar": self.handle_calendar,
-                "inbox": self.handle_inbox, "areas": self.handle_areas,
+                "inbox": self.handle_inbox, "tree": self.handle_tree,
                 "review": self.handle_review}[self.view](ch)
 
     def handle_day(self, ch):
@@ -582,25 +631,75 @@ class App:
                 db.delete(self.conn, "tasks", t.id)
         return True
 
-    def handle_areas(self, ch):
-        areas = self.areas
+    def handle_tree(self, ch):
+        items = self.visible_nodes()
+        node = self.selected_node()
+        t = self.tree
+
         if ch in (ord("j"), curses.KEY_DOWN):
-            self.list_row = min(self.list_row + 1, max(0, len(areas) - 1))
+            self.list_row = min(self.list_row + 1, max(0, len(items) - 1))
         elif ch in (ord("k"), curses.KEY_UP):
             self.list_row = max(0, self.list_row - 1)
-        elif ch in (ord("e"), curses.KEY_ENTER, 10, 13) and areas:
-            a = areas[self.list_row]
-            name = prompt(self.stdscr, "rename area:", a.name)
+        elif ch in (ord("l"), curses.KEY_RIGHT) and node:
+            self.collapsed.discard(node.id)
+        elif ch in (ord("h"), curses.KEY_LEFT) and node:
+            if t.is_leaf(node.id) or node.id in self.collapsed:
+                # Already folded (or nothing to fold): step out to the parent.
+                parent = node.parent_id
+                if parent:
+                    self.list_row = next(
+                        (i for i, (n, _) in enumerate(items) if n.id == parent),
+                        self.list_row)
+            else:
+                self.collapsed.add(node.id)
+        elif ch == ord("A"):
+            name = prompt(self.stdscr, "new root:")
             if name and name.strip():
-                self.conn.execute("update areas set name = ? where id = ?",
-                                  (name.strip(), a.id))
-                self.conn.commit()
-        elif ch == ord("x") and areas:
-            a = areas[self.list_row]
-            n = len(db.tasks(self.conn, area_id=a.id))
-            if confirm(self.stdscr, f"delete area '{a.name}'? {n} tasks lose their area"):
-                db.delete(self.conn, "areas", a.id)
+                db.add_node(self.conn, name)
+                self.message = f"'{name.strip()}' added as a root"
+        elif ch == ord("a") and node:
+            name = prompt(self.stdscr, f"child of {node.name}:")
+            if name and name.strip():
+                db.add_node(self.conn, name, node.id)
+                self.collapsed.discard(node.id)
+                self.message = f"'{name.strip()}' added under {node.name}"
+        elif ch in (ord("e"), curses.KEY_ENTER, 10, 13) and node:
+            name = prompt(self.stdscr, "rename:", node.name)
+            if name and name.strip():
+                db.rename_node(self.conn, node.id, name)
+        elif ch == ord("m") and node:
+            self.move_node(node)
+        elif ch == ord("x") and node:
+            sub = t.descendants(node.id)
+            affected = db.subtree_tasks(self.conn, node.id)
+            what = f"delete '{node.name}'?"
+            if sub:
+                what += f" {len(sub)} node(s) below go too"
+            if affected:
+                what += f"; {len(affected)} task(s) lose their goal"
+            if confirm(self.stdscr, what):
+                db.delete(self.conn, "nodes", node.id)
+                self.list_row = max(0, self.list_row - 1)
         return True
+
+    def move_node(self, node):
+        """Reparent, choosing the new parent from the rest of the tree."""
+        t = self.tree
+        banned = {node.id} | {d.id for d in t.descendants(node.id)}
+        options = [("", "— top level —")] + [
+            (n.id, "  " * depth + n.name)
+            for n, depth in t.walk() if n.id not in banned]
+        if len(options) == 1 and not node.parent_id:
+            self.message = "nowhere to move it — it's already a root"
+            return
+        vals = run_form(self.stdscr, f"Move '{node.name}'",
+                        [Field("parent", "New parent", "choice",
+                               choices=options, value=node.parent_id or "",
+                               hint="← → to pick, then Ctrl-S")])
+        if vals is None:
+            return
+        err = db.move_node(self.conn, node.id, vals["parent"] or None)
+        self.message = err or f"moved under {t.path(vals['parent']) or 'top level'}"
 
     def handle_review(self, ch):
         rotting = self.stale()

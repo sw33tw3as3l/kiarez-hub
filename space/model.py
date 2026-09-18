@@ -59,19 +59,69 @@ GREETINGS = [
 
 
 @dataclass
-class Area:
-    """A permanent part of your life. Areas are never finished or achieved."""
+class Node:
+    """One node of the tree of things you care about.
+
+    The tree is a forest of permanent nodes — nothing is ever completed or
+    closed. A node with children reads as an area; a leaf reads as a goal.
+    That distinction is derived, never stored, so a goal becomes an area the
+    moment you nest something under it and nothing has to be migrated.
+
+    Tasks may hang off any node, not only leaves: the natural place for a
+    task is wherever you were thinking when you wrote it down.
+    """
     id: str
     name: str
+    parent_id: str | None = None
     position: int = 0
     created_at: str = ""
+
+
+@dataclass
+class Tree:
+    """A flattened view of the forest: every node with its depth and path."""
+    nodes: list[Node]
+    children: dict[str | None, list[Node]]
+
+    def kids(self, node_id: str | None) -> list[Node]:
+        return self.children.get(node_id, [])
+
+    def is_leaf(self, node_id: str) -> bool:
+        return not self.children.get(node_id)
+
+    def label(self, node_id: str) -> str:
+        """What this node is, in the vocabulary of the tree."""
+        return "goal" if self.is_leaf(node_id) else "area"
+
+    def path(self, node_id: str | None, sep: str = " › ") -> str:
+        by_id = {n.id: n for n in self.nodes}
+        parts, seen = [], set()
+        while node_id and node_id in by_id and node_id not in seen:
+            seen.add(node_id)
+            parts.append(by_id[node_id].name)
+            node_id = by_id[node_id].parent_id
+        return sep.join(reversed(parts))
+
+    def descendants(self, node_id: str) -> list[Node]:
+        out, stack = [], list(self.kids(node_id))
+        while stack:
+            n = stack.pop()
+            out.append(n)
+            stack.extend(self.kids(n.id))
+        return out
+
+    def walk(self, node_id: str | None = None, depth: int = 0):
+        """Depth-first, yielding (node, depth) in display order."""
+        for child in self.kids(node_id):
+            yield child, depth
+            yield from self.walk(child.id, depth + 1)
 
 
 @dataclass
 class Task:
     id: str
     title: str
-    area_id: str | None = None
+    node_id: str | None = None        # anywhere in the tree, leaf or not
     day: str | None = None            # None = inbox, not yet scheduled
     status: str = "todo"
     kind: str | None = None           # ship | support
@@ -88,13 +138,13 @@ class Task:
 
     @property
     def defined(self) -> bool:
-        return bool(self.area_id and self.outcome and self.next_action
+        return bool(self.node_id and self.outcome and self.next_action
                     and self.kind and self.estimate)
 
     @property
     def missing(self) -> list[str]:
         return [name for name, val in (
-            ("area", self.area_id), ("outcome", self.outcome),
+            ("goal", self.node_id), ("outcome", self.outcome),
             ("next action", self.next_action), ("kind", self.kind),
             ("estimate", self.estimate)) if not val]
 

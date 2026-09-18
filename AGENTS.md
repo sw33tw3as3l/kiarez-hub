@@ -4,7 +4,8 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 `socket`. No dependencies, no server, no network.
 
 - `space/model.py` — the domain and every rule. `can_start()` is the single
-  gate that both the TUI and CLI call; don't duplicate its logic.
+  gate that both the TUI and CLI call; don't duplicate its logic. `Tree`
+  holds the walk/path/descendants helpers.
 - `space/db.py` — SQLite. `roll_forward()` runs at startup; `set_status()`
   doubles as the clock (time accrues while a task is in `doing`).
 - `space/ui.py` — curses primitives, the field editor, the one-line prompt.
@@ -15,7 +16,11 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 Rules that matter:
 - **Capture is free, starting is not.** Anything can be created with a title
   alone. `can_start()` decides when it may move to `doing`.
-- Areas are permanent. They have no completion, no target date, no progress.
+- **The tree is a forest of permanent nodes.** `nodes.parent_id` is the only
+  structure; area-vs-goal is derived from having children (`Tree.is_leaf`) and
+  is never stored, so nesting under a goal needs no migration. Tasks reference
+  any node. `move_node()` refuses cycles; deleting cascades to the subtree and
+  nulls the tasks' `node_id`.
 - Ship vs Support is on every task and drives the day strip and Review.
 - Unfinished tasks roll to today and increment `rolls`.
 - No third-party dependencies. The point is that it starts instantly.
