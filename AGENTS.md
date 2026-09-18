@@ -12,8 +12,10 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 - `space/app.py` — the five views.
 - `space/cli.py` — scriptable commands.
 - `space/review.py` — the daily question and the Sunday weekly. `pending()`
-  is what the reminder script and the board both ask. Days lock at midnight:
-  only `today()` is writable, by design.
+  is what the reminder script and the board both ask. `review_day()` is the
+  writable day — yesterday until 04:00, then today — because the question is
+  asked at midnight, when the day being reported on has just ended. Nothing
+  older is ever writable, by design.
 - `space/track.py` — Hyprland focus tracker. Banks seconds, checks (focus
   gained), interactions (title changes while focused) and the longest stretch,
   plus an hourly breakdown, into `app_usage` / `app_usage_hours`. Each watched

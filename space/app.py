@@ -8,6 +8,7 @@ import random
 from datetime import date
 
 from . import db
+from .review import question_for, review_day
 from .model import (
     KIND_LABELS, NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS,
     ESTIMATE_LABELS, GREETINGS, add_days, can_start, fmt_minutes, ship_ratio,
@@ -62,8 +63,8 @@ class App:
             self.message = f"{rolled} unfinished task(s) rolled forward to today"
         # The board is the backstop for the day's question: if the notification
         # was missed, opening the board says so. It never blocks you.
-        if not db.day_log(conn, today()).answered:
-            note = "today's question is unanswered — press w"
+        if not db.day_log(conn, review_day()).answered:
+            note = "the day's question is unanswered — press w"
             self.message = f"{self.message} · {note}" if self.message else note
 
     # --- data ---------------------------------------------------------------
@@ -178,7 +179,7 @@ class App:
         if log.shipped:
             put(self.stdscr, y, x, f"shipped: {ellipsis(log.shipped, w - x - 4)}",
                 attr(C_DONE))
-        elif self.day == today():
+        elif self.day == review_day():
             put(self.stdscr, y, x, "unanswered — press w", attr(C_WARN))
         elif self.day < today():
             put(self.stdscr, y, x, "unanswered, and closed", attr(C_DIM))
@@ -534,14 +535,16 @@ class App:
         """The one daily question. Only today is writable — a day locks at
         midnight, because a journal you can backfill records what you wish had
         happened rather than what did."""
-        if self.day != today():
-            self.message = f"{self.day} is closed — only today can be answered"
+        day = review_day()
+        if self.day != day:
+            self.message = (f"{self.day} is closed — {day} is the day still "
+                            f"open for answering")
             return
-        existing = db.day_log(self.conn, self.day).shipped or ""
-        text = prompt(self.stdscr, "what happened today?", existing)
+        existing = db.day_log(self.conn, day).shipped or ""
+        text = prompt(self.stdscr, question_for(day).lower(), existing)
         if text is None:
             return
-        db.log_shipped(self.conn, self.day, text or "nothing")
+        db.log_shipped(self.conn, day, text or "nothing")
         self.message = "logged" if text.strip() else "logged: nothing"
 
     def advance(self, t):

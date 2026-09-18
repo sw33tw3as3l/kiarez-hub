@@ -144,15 +144,17 @@ nothing shipped.
 space-review            # or press w on the board
 ```
 
-- **Only today can be answered.** At midnight the day locks; an unanswered day
-  stays blank forever. A journal you can backfill records what you wish had
-  happened.
+- **The day stays answerable until 04:00**, then locks for good. The question
+  arrives at midnight, when the day you're reporting on has just ended — so
+  the boundary sits where the sleep does, not where the calendar does. An
+  unanswered day stays blank forever; a journal you can backfill records what
+  you wish had happened.
 - **"nothing" is a real answer**, stored as such, and visible in the calendar.
 - No streaks, no score, no guilt — the numbers already do that job honestly.
 
-A notification fires at 21:30 (`SPACE_REVIEW_AT` to change it) if the day is
-still unanswered, and clicking it opens the review. If you miss it, the board
-says so the next time you open it. Neither one blocks you.
+A notification fires at **00:00** (`SPACE_REVIEW_AT` to change it) if the day
+is still unanswered, and clicking it opens the review. If you miss it, the
+board says so the next time you open it. Neither one blocks you.
 
 **Sundays** add three more questions, where a week of data makes the answers
 real: what actually moved, what you kept avoiding (the tool already knows —

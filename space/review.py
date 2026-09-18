@@ -17,7 +17,7 @@ Rules, all deliberate:
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from . import db
 from .model import (
@@ -25,6 +25,12 @@ from .model import (
 )
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
+
+# The question is asked at midnight, when the day you are reporting on has
+# just ended. So the reviewable day runs to 04:00, not to 24:00: at 00:30 you
+# are still answering for the day you actually lived. After 04:00 that day is
+# closed for good — the lock still exists, it just sits where the sleep does.
+DAY_ENDS_AT = 4
 
 DAILY_QUESTION = "What happened today?"
 DAILY_HINT = 'what got done, what got in the way — "nothing" is a real answer'
@@ -37,6 +43,19 @@ WEEKLY = [
     ("change", "What will you do differently next week?",
      "one change, small enough to actually do"),
 ]
+
+
+def review_day(when: datetime | None = None) -> str:
+    """The day currently being reviewed — yesterday until 04:00, then today."""
+    when = when or datetime.now()
+    return (when - timedelta(hours=DAY_ENDS_AT)).date().isoformat()
+
+
+def question_for(day: str) -> str:
+    """Name the day when it isn't the one the calendar is showing."""
+    if day == date.today().isoformat():
+        return DAILY_QUESTION
+    return f"What happened on {date.fromisoformat(day).strftime('%A')}?"
 
 
 def ask(question: str, hint: str, existing: str = "") -> str | None:
@@ -96,7 +115,7 @@ def daily(conn, day: str) -> bool:
     """Ask the one question. Returns True if it got an answer."""
     log = db.day_log(conn, day)
     day_facts(conn, day)
-    answer = ask(DAILY_QUESTION, DAILY_HINT, log.shipped or "")
+    answer = ask(question_for(day), DAILY_HINT, log.shipped or "")
     if answer is None:
         return False
     db.log_shipped(conn, day, answer or "nothing")
@@ -147,8 +166,8 @@ def weekly(conn, day: str) -> None:
 
 
 def pending(conn, day: str | None = None) -> bool:
-    """Is there anything to answer for today?"""
-    day = day or today()
+    """Is there anything still answerable?"""
+    day = day or review_day()
     if not db.day_log(conn, day).answered:
         return True
     return is_sunday(day) and not db.week_log(conn, day).answered
@@ -164,13 +183,13 @@ def main(argv=None) -> int:
         globals().update(DIM="", ACC="", OK="", WARN="", OFF="")
 
     conn = db.connect()
-    day = today()
+    day = review_day()
 
     if "--date" in argv:
         wanted = argv[argv.index("--date") + 1]
         if wanted != day:
-            print(f"{WARN}{wanted} is closed.{OFF} Only today can be answered — "
-                  f"a day you can fill in later stops being a record.",
+            print(f"{WARN}{wanted} is closed.{OFF} Only {day} can still be "
+                  f"answered — a day you can fill in later stops being a record.",
                   file=sys.stderr)
             return 1
 
@@ -180,7 +199,7 @@ def main(argv=None) -> int:
     log = db.day_log(conn, day)
     if log.answered and "--again" not in argv and not (
             is_sunday(day) and not db.week_log(conn, day).answered):
-        print(f"{DIM}today is already answered:{OFF} {log.shipped}")
+        print(f"{DIM}{day} is already answered:{OFF} {log.shipped}")
         print(f"{DIM}space-review --again to change it{OFF}")
         return 0
 
