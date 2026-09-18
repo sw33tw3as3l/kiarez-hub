@@ -23,6 +23,7 @@ from dataclasses import asdict
 
 from . import db
 from .review import review_day
+from .text import cols, ellipsis, pad
 from .model import (
     ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
     STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
@@ -202,7 +203,7 @@ def cmd_tree(conn, a):
         open_now = sum(x.status != "done" for x in sub)
         leaf = t.is_leaf(node.id)
         name = ("  " * depth) + ("" if leaf else "▾ ") + node.name
-        print(f"{ACC}{node.id[:8]}{OFF}  {name:44} "
+        print(f"{ACC}{node.id[:8]}{OFF}  {pad(ellipsis(name, 44), 44)} "
               f"{DIM}{open_now} open · {shipped}/{finished} shipped"
               f"{'' if leaf else ' (subtree)'}{OFF}")
 
@@ -277,8 +278,8 @@ def cmd_focus(conn, a):
         bar = "█" * max(1, round(30 * secs / peak))
         extra = f"{d['opens']} checks · longest {fmt_minutes(d['longest'] // 60)}"
         tint = app_color(color)
-        print(f"{tint}{label:14} {fmt_minutes(mins):>7}  {bar:<30}{OFF} "
-              f"{DIM}{extra}{OFF}")
+        print(f"{tint}{pad(ellipsis(label, 14), 14)} {fmt_minutes(mins):>7}  "
+              f"{bar:<30}{OFF} {DIM}{extra}{OFF}")
     total = db.usage_total(conn, day)
     red = db.usage_total(conn, day, color="red")
     print(f"{DIM}tracked {fmt_minutes(total // 60)}{OFF}"
@@ -301,7 +302,7 @@ def focus_matrix(conn, day, days):
         cells = "".join(
             (fmt_minutes(row['by_day'][d] // 60) if row["by_day"].get(d) else "·"
              ).rjust(8) for d in span)
-        print(f"{tint}{row['label']:<14}{cells}"
+        print(f"{tint}{pad(ellipsis(row['label'], 14), 14)}{cells}"
               f"{fmt_minutes(row['total'] // 60).rjust(9)}{OFF}")
     def day_total(d):
         secs = sum(r["by_day"].get(d, 0) for r in matrix)
@@ -371,7 +372,8 @@ def cmd_review(conn, a):
             prev = totals.get(label, (color, 0))[1]
             totals[label] = (color, prev + secs)
     for label, (color, secs) in sorted(totals.items(), key=lambda kv: -kv[1][1]):
-        print(f"  {app_color(color)}{label:14} {fmt_minutes(secs // 60)}{OFF}")
+        print(f"  {app_color(color)}{pad(ellipsis(label, 14), 14)} "
+              f"{fmt_minutes(secs // 60)}{OFF}")
     if not totals:
         print(f"  {DIM}nothing recorded{OFF}")
 
@@ -392,7 +394,7 @@ def cmd_review(conn, a):
                if t.status != "done" and (t.rolls >= NAGGING_ROLLS
                                           or t.stale_days() >= STALE_DAYS)]
     for t, why in rotting:
-        print(f"  {t.id[:8]}  {t.title[:50]:52} {WARN}{why}{OFF}")
+        print(f"  {t.id[:8]}  {pad(ellipsis(t.title, 50), 52)}{WARN}{why}{OFF}")
     if not rotting:
         print(f"  {OK}nothing rotting{OFF}")
 

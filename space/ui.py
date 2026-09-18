@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from . import fx
 from .model import ESTIMATES, KINDS
+from .text import cols, ellipsis, fit, pad, wrap          # noqa: F401
 from .theme import (                                        # noqa: F401
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
     C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN,
@@ -48,11 +49,10 @@ def put(win, y: int, x: int, text: str, a: int = 0, width: int | None = None) ->
     room = (w - x - 1) if width is None else min(width, w - x - 1)
     if room <= 0:
         return
-    # addnstr's limit is counted in BYTES, but `room` is screen columns. With
-    # multibyte characters (·, ✓, ↑, the box-drawing lines) the byte count
-    # runs out first and clips the text early, so trim by column here and
-    # hand addnstr the resulting byte length.
-    text = text[:room]
+    # addnstr's limit is counted in BYTES, `room` is screen columns, and a
+    # character may be worth two columns. Trim by column here and hand
+    # addnstr the resulting byte length.
+    text = fit(text, room)
     try:
         win.addnstr(y, x, text, len(text.encode("utf-8")), a)
     except curses.error:
@@ -80,27 +80,6 @@ def shade(win, top: int, left: int, height: int, width: int) -> None:
 
 def hline(win, y: int, x: int, width: int, a: int = 0) -> None:
     put(win, y, x, "─" * max(0, width), a)
-
-
-def ellipsis(text: str, width: int) -> str:
-    text = (text or "").replace("\n", " ")
-    if width <= 0:
-        return ""
-    return text if len(text) <= width else text[: max(0, width - 1)] + "…"
-
-
-def wrap(text: str, width: int) -> list[str]:
-    words, lines, cur = (text or "").split(), [], ""
-    for word in words:
-        if len(cur) + len(word) + (1 if cur else 0) <= width:
-            cur += (" " if cur else "") + word
-        else:
-            if cur:
-                lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
-    return lines or [""]
 
 
 # --- the field editor -------------------------------------------------------
@@ -190,7 +169,7 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             else:
                 text = field.value or ""
                 box = attr(C_GHOST) if not (selected and editing) else attr(C_DEEP)
-                put(stdscr, y, value_x, ellipsis(text, room).ljust(room), box)
+                put(stdscr, y, value_x, pad(ellipsis(text, room), room), box)
                 if selected and editing:
                     put(stdscr, y, value_x + min(cursor, room),
                         fx.caret(pulse.phase), attr(C_NEON, True))
@@ -320,9 +299,11 @@ def prompt(stdscr, label: str, value: str = "", react=None) -> str | None:
             inner = width - 6
             start = 0 if len(value) <= inner else max(0, min(cursor - inner + 1,
                                                             len(value) - inner))
-            shown = value[start:start + inner]
-            put(stdscr, top + 2, left + 3, shown.ljust(inner), attr(C_GHOST))
-            put(stdscr, top + 2, left + 3 + (cursor - start),
+            shown = fit(value[start:], inner)
+            put(stdscr, top + 2, left + 3, pad(shown, inner), attr(C_GHOST))
+            # The caret sits at the cursor's COLUMN offset, which is not its
+            # character offset once anything wide is on the line.
+            put(stdscr, top + 2, left + 3 + cols(value[start:cursor]),
                 fx.caret(pulse.phase), attr(C_NEON, True))
 
             note, tone = (react(value) if react else (None, C_DIM))

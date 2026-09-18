@@ -17,6 +17,7 @@ from .model import (
 )
 from . import fx
 from .theme import fx_enabled  # noqa: F401
+from .ui import cols, fit, pad  # noqa: F401
 from .ui import (
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
     C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN, Field, attr, confirm,
@@ -184,10 +185,10 @@ class App:
                 return f" {i + 1} {label}" + (f" {badge} " if badge else " ")
             return f" {i + 1}{badge} "
 
-        full = sum(len(chip_for(i, k, l, True)) + 1
+        full = sum(cols(chip_for(i, k, l, True)) + 1
                    for i, (k, l) in enumerate(VIEWS)) <= w - 12
         widths = [chip_for(i, k, l, full) for i, (k, l) in enumerate(VIEWS)]
-        room = w - sum(len(c) + 1 for c in widths) - 6
+        room = w - sum(cols(c) + 1 for c in widths) - 6
 
         put(self.stdscr, 0, 1, "◤", attr(C_NEON, True))
         if room >= 6:
@@ -203,7 +204,7 @@ class App:
         for i in range(len(VIEWS) - 1, -1, -1):
             key, label = VIEWS[i]
             chip, count = widths[i], badges.get(key)
-            x -= len(chip) + 1
+            x -= cols(chip) + 1
             if x < 1:
                 break                      # no room left; drop the rest
             on = key == self.view
@@ -550,7 +551,8 @@ class App:
         for row in matrix[:5]:
             color = APP_COLOR.get(row["color"], C_DIM)
             bold = row["color"] == "red"
-            put(self.stdscr, y, 2, ellipsis(row["label"], 13), attr(color, bold))
+            put(self.stdscr, y, 2, pad(ellipsis(row["label"], 13), 13),
+                attr(color, bold))
             for i, d in enumerate(span):
                 secs = row["by_day"].get(d, 0)
                 cell = fmt_minutes(secs // 60) if secs else "·"

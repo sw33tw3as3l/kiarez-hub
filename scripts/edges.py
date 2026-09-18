@@ -85,6 +85,25 @@ check("logging an empty answer still marks the day", lambda: (
     (db.log_day(c, today(), "nothing", ""),
      db.day_log(c, today()).answered)[1], "day not marked answered"))
 
+# --- text measured in columns, not codepoints ---------------------------------
+from space.text import cols, fit, pad, ellipsis            # noqa: E402
+
+WIDE = ["评分引擎上线", "🚀🔥💡✅🎯", "اپلای ابراد را تمام کن", "plain ascii"]
+
+check("ellipsis never exceeds its column width", lambda: (
+    all(cols(ellipsis(s, n)) <= n for s in WIDE for n in (1, 5, 10, 20)),
+    "a trimmed string still overflows"))
+
+check("fit never splits a wide character", lambda: (
+    all(cols(fit(s, n)) <= n for s in WIDE for n in range(1, 12)),
+    "fit produced more columns than asked for"))
+
+check("pad reaches the column width exactly", lambda: (
+    all(cols(pad(ellipsis(s, 12), 12)) == 12 for s in WIDE), "padding is off"))
+
+check("zero-width characters cost nothing", lambda: (
+    cols("a\u200cb") == 2 and cols("e\u0301") == 1, "combining marks counted"))
+
 print("\n" + (f"{len(fails)} FAILURE(S)" if fails else "all edges clean"))
 for f in fails:
     print(" -", f)
