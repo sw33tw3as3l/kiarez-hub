@@ -208,6 +208,16 @@ space-cli ls --json
 
 Task ids take any unambiguous prefix, like git. `--plain` drops the color.
 
+## Checking it still works
+
+```bash
+python3 scripts/smoke.py
+```
+
+Drives the real board in a pseudo-terminal through every view, form and
+prompt — effects on and off — plus every CLI command, and fails on any
+traceback. Takes about a minute.
+
 ## Data
 
 `~/.kiarez-space/data.db`, or wherever `KIAREZ_SPACE_DB` points.

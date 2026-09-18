@@ -690,6 +690,18 @@ class App:
 
     # --- input --------------------------------------------------------------
 
+    def alive(self) -> bool:
+        """Is anything on screen worth animating? Otherwise we block on input.
+
+        Kept cheap and kept honest: an idle board must return False, or it
+        spins at the frame rate forever for no reason.
+        """
+        if time.monotonic() - self.message_at < 2.0:
+            return True
+        if not db.day_log(self.conn, review_day()).answered:
+            return True
+        return db.usage_total(self.conn, self.day, color="red") >= 3600
+
     def handle(self, ch) -> bool:
         self.message = ""
         if ch in (ord("q"), ord("Q")):

@@ -60,3 +60,9 @@ Gotchas already paid for:
   main loop starts spinning.
 - `App.alive()` decides whether the main loop animates or blocks. Keep it
   cheap and keep it honest: an idle board must block.
+- **Run `python3 scripts/smoke.py` before committing any UI change.** Importing
+  a module proves nothing about a curses app — a missing method only blows up
+  on the frame that calls it. The smoke test drives the real TUI in a pty
+  through every view and panel, with effects on and off, and fails on any
+  traceback. It was written after a regex tidy-up silently deleted a method
+  that `import space.app` was perfectly happy about.
