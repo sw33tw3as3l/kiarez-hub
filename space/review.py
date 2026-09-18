@@ -32,8 +32,15 @@ DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0
 # closed for good — the lock still exists, it just sits where the sleep does.
 DAY_ENDS_AT = 4
 
-DAILY_QUESTION = "What happened today?"
-DAILY_HINT = 'what got done, what got in the way — "nothing" is a real answer'
+# Two questions, in this order. The second is the one that does the work:
+# what you did is usually already on the board, what you didn't is not
+# recorded anywhere and is what the day actually cost.
+DAILY = [
+    ("did", "What important things did you do today?",
+     'the ones that mattered — "nothing" is a real answer'),
+    ("missed", "What important things did you not do today?",
+     "the ones you meant to and didn't"),
+]
 
 WEEKLY = [
     ("moved", "What actually moved this week?",
@@ -51,11 +58,13 @@ def review_day(when: datetime | None = None) -> str:
     return (when - timedelta(hours=DAY_ENDS_AT)).date().isoformat()
 
 
-def question_for(day: str) -> str:
-    """Name the day when it isn't the one the calendar is showing."""
+def questions_for(day: str) -> list[tuple[str, str, str]]:
+    """The day's questions, naming the day when it isn't the calendar's today."""
     if day == date.today().isoformat():
-        return DAILY_QUESTION
-    return f"What happened on {date.fromisoformat(day).strftime('%A')}?"
+        return DAILY
+    weekday = date.fromisoformat(day).strftime("%A")
+    return [(key, q.replace("today", f"on {weekday}"), hint)
+            for key, q, hint in DAILY]
 
 
 def ask(question: str, hint: str, existing: str = "") -> str | None:
@@ -112,14 +121,18 @@ def day_facts(conn, day: str) -> None:
 
 
 def daily(conn, day: str) -> bool:
-    """Ask the one question. Returns True if it got an answer."""
+    """Ask the day's two questions. Returns True once both are answered."""
     log = db.day_log(conn, day)
     day_facts(conn, day)
-    answer = ask(question_for(day), DAILY_HINT, log.shipped or "")
-    if answer is None:
-        return False
-    db.log_shipped(conn, day, answer or "nothing")
-    print(f"{OK}logged{OFF}" if answer else f"{DIM}logged: nothing{OFF}")
+    answers = {}
+    for key, question, hint in questions_for(day):
+        existing = log.did if key == "did" else log.not_done
+        got = ask(question, hint, existing)
+        if got is None:
+            return False
+        answers[key] = got
+    db.log_day(conn, day, answers["did"] or "nothing", answers["missed"])
+    print(f"{OK}logged{OFF}")
     return True
 
 
@@ -199,7 +212,9 @@ def main(argv=None) -> int:
     log = db.day_log(conn, day)
     if log.answered and "--again" not in argv and not (
             is_sunday(day) and not db.week_log(conn, day).answered):
-        print(f"{DIM}{day} is already answered:{OFF} {log.shipped}")
+        print(f"{DIM}{day} is already answered{OFF}")
+        print(f"  {OK}did:{OFF} {log.did}")
+        print(f"  {WARN}not:{OFF} {log.not_done or '—'}")
         print(f"{DIM}space-review --again to change it{OFF}")
         return 0
 

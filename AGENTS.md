@@ -11,7 +11,9 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 - `space/ui.py` — curses primitives, the field editor, the one-line prompt.
 - `space/app.py` — the five views.
 - `space/cli.py` — scriptable commands.
-- `space/review.py` — the daily question and the Sunday weekly. `pending()`
+- `space/review.py` — the daily questions and the Sunday weekly. Two answers
+  a day: `days.shipped` is what you did (it keeps its original name) and
+  `days.missed` is what you didn't. `pending()`
   is what the reminder script and the board both ask. `review_day()` is the
   writable day — yesterday until 04:00, then today — because the question is
   asked at midnight, when the day being reported on has just ended. Nothing

@@ -133,15 +133,23 @@ stops counting — that's you walking away, not you working.
 It starts with your Hyprland session via `~/.config/hypr/custom/execs.lua`.
 `scripts/space-track.service` is there if you'd rather systemd supervise it.
 
-## The daily question
+## The daily questions
 
-One question a day, always the same one, asked with the day's facts on screen
-above it — finished tasks, ship count, screen time, Telegram checks. The facts
-are the point: it is hard to type "good day" underneath 23 Telegram checks and
-nothing shipped.
+Two questions a day, always the same two, asked with the day's facts on screen
+above them — finished tasks, ship count, screen time, Telegram checks. The
+facts are the point: it is hard to type "good day" underneath 23 Telegram
+checks and nothing shipped.
+
+1. **What important things did you do today?**
+2. **What important things did you not do today?**
+
+The second is the one that does the work. What you did is already on the
+board; what you didn't is recorded nowhere else, and is usually what the day
+actually cost.
 
 ```bash
 space-review            # or press w on the board
+space-cli day           # read the answers back
 ```
 
 - **The day stays answerable until 04:00**, then locks for good. The question
@@ -150,6 +158,10 @@ space-review            # or press w on the board
   unanswered day stays blank forever; a journal you can backfill records what
   you wish had happened.
 - **"nothing" is a real answer**, stored as such, and visible in the calendar.
+- **Both answers show in the Calendar.** Each day is marked `✓` if you did
+  something, `·` if you answered "nothing", and `!` if there was something you
+  didn't do. Put the cursor on any day and both answers are spelled out below
+  the month.
 - No streaks, no score, no guilt — the numbers already do that job honestly.
 
 A notification fires at **00:00** (`SPACE_REVIEW_AT` to change it) if the day

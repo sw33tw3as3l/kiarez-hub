@@ -8,7 +8,7 @@ import random
 from datetime import date
 
 from . import db
-from .review import question_for, review_day
+from .review import questions_for, review_day
 from .model import (
     KIND_LABELS, NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS,
     ESTIMATE_LABELS, GREETINGS, add_days, can_start, fmt_minutes, ship_ratio,
@@ -176,9 +176,13 @@ class App:
         for text, color in bits:
             put(self.stdscr, y, x, text, attr(color))
             x += len(text) + 4
-        if log.shipped:
-            put(self.stdscr, y, x, f"shipped: {ellipsis(log.shipped, w - x - 4)}",
-                attr(C_DONE))
+        if log.answered:
+            room = max(10, (w - x - 6) // 2)
+            put(self.stdscr, y, x, f"did: {ellipsis(log.did, room)}", attr(C_DONE))
+            if log.not_done:
+                x2 = x + 5 + min(len(log.did), room) + 3
+                put(self.stdscr, y, x2, f"not: {ellipsis(log.not_done, room)}",
+                    attr(C_WARN))
         elif self.day == review_day():
             put(self.stdscr, y, x, "unanswered — press w", attr(C_WARN))
         elif self.day < today():
@@ -288,7 +292,10 @@ class App:
                 if total:
                     cell += f" {done}/{total}"
                 if iso in logs:
-                    cell += " ✓" if logs[iso].lower() not in ("", "nothing") else " ·"
+                    did, missed = logs[iso]
+                    cell += " ✓" if did.lower() not in ("", "nothing") else " ·"
+                    if missed:
+                        cell += "!"
                 a = attr(C_DIM)
                 if total and done == total:
                     a = attr(C_DONE)
@@ -301,8 +308,28 @@ class App:
                 put(self.stdscr, y, 2 + i * 11, cell.ljust(9), a)
             y += 2
 
-        put(self.stdscr, y, 2, "✓ = you logged something shipped · "
-            "· = you logged nothing · Enter opens that day", attr(C_DIM))
+        put(self.stdscr, y, 2,
+            "✓ did something · · nothing · ! something you didn't · Enter opens that day",
+            attr(C_DIM))
+        self.draw_day_answers(y + 2, w)
+
+    def draw_day_answers(self, top, w):
+        """The two answers for whatever day the calendar cursor is on."""
+        iso = self.cal_cursor.isoformat()
+        log = db.day_log(self.conn, iso)
+        hline(self.stdscr, top, 2, w - 4, attr(C_DIM))
+        put(self.stdscr, top + 1, 2,
+            self.cal_cursor.strftime("%A %d %B"), attr(C_ACCENT, True))
+        if not log.answered:
+            closed = "never answered — that day is closed" if iso < review_day() \
+                else "not answered yet"
+            put(self.stdscr, top + 2, 2, closed, attr(C_DIM))
+            return
+        for i, (label, text, color) in enumerate(
+                [("did", log.did or "—", C_DONE),
+                 ("not", log.not_done or "—", C_WARN)]):
+            put(self.stdscr, top + 2 + i, 2, f"{label}:", attr(color, True))
+            put(self.stdscr, top + 2 + i, 8, ellipsis(text, w - 12), attr(C_DIM))
 
     def draw_inbox(self, top, height, w):
         items = self.inbox()
@@ -531,8 +558,8 @@ class App:
         if vals["estimate"] in ("half_day", "day_plus"):
             self.message += " — that's bigger than half a day; consider splitting it"
 
-    def log_shipped(self):
-        """The one daily question. Only today is writable — a day locks at
+    def answer_day(self):
+        """The day's two questions. Only the open day is writable — a day locks at
         midnight, because a journal you can backfill records what you wish had
         happened rather than what did."""
         day = review_day()
@@ -540,12 +567,17 @@ class App:
             self.message = (f"{self.day} is closed — {day} is the day still "
                             f"open for answering")
             return
-        existing = db.day_log(self.conn, day).shipped or ""
-        text = prompt(self.stdscr, question_for(day).lower(), existing)
-        if text is None:
-            return
-        db.log_shipped(self.conn, day, text or "nothing")
-        self.message = "logged" if text.strip() else "logged: nothing"
+        log = db.day_log(self.conn, day)
+        answers = {}
+        for key, question, _hint in questions_for(day):
+            existing = log.did if key == "did" else log.not_done
+            got = prompt(self.stdscr, question.lower(), existing)
+            if got is None:
+                self.message = "left unanswered"
+                return
+            answers[key] = got
+        db.log_day(self.conn, day, answers["did"] or "nothing", answers["missed"])
+        self.message = "logged"
 
     def advance(self, t):
         nxt = STATUS_KEYS[(STATUS_KEYS.index(t.status) + 1) % 3]
@@ -601,7 +633,7 @@ class App:
             self.message = "pick where it goes: a adds a child, A adds a root"
             return True
         if ch == ord("w"):
-            self.log_shipped()
+            self.answer_day()
             return True
         if ch == ord("t"):
             self.day = today()

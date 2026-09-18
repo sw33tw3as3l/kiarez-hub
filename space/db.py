@@ -52,11 +52,14 @@ create index if not exists tasks_day_idx    on tasks (day);
 create index if not exists tasks_node_idx   on tasks (node_id);
 create index if not exists tasks_status_idx on tasks (status);
 
--- One row per day: the single end-of-day answer. Writable only on the day
--- itself — a locked-out day stays blank, and the blank is data too.
+-- One row per day, two answers: what mattered that you did (`shipped`, named
+-- before the second question existed) and what mattered that you didn't
+-- (`missed`). Writable only until the day locks — a locked-out day stays
+-- blank, and the blank is data too.
 create table if not exists days (
   date      text primary key,
   shipped   text,
+  missed    text,
   logged_at text
 );
 
@@ -145,6 +148,9 @@ def _add_missing_columns(conn) -> None:
         if col not in have:
             conn.execute(f"alter table app_usage add column {col} "
                          f"integer not null default 0")
+    days = {r["name"] for r in conn.execute("pragma table_info(days)")}
+    if days and "missed" not in days:
+        conn.execute("alter table days add column missed text")
     watch = {r["name"] for r in conn.execute("pragma table_info(watchlist)")}
     if watch and "color" not in watch:
         conn.execute("alter table watchlist add column color text "
@@ -262,9 +268,10 @@ def log_week(conn, date_str: str, moved: str, avoided: str, change: str) -> None
     conn.commit()
 
 
-def logged_days(conn) -> dict[str, str]:
-    return {r["date"]: (r["shipped"] or "")
-            for r in conn.execute("select date, shipped from days")}
+def logged_days(conn) -> dict[str, tuple[str, str]]:
+    """{date: (what you did, what you didn't)} for every answered day."""
+    return {r["date"]: ((r["shipped"] or ""), (r["missed"] or ""))
+            for r in conn.execute("select date, shipped, missed from days")}
 
 
 def counts_by_day(conn, days: list[str]) -> dict[str, tuple[int, int]]:
@@ -427,11 +434,14 @@ def reorder(conn, task_id: str, delta: int) -> None:
     conn.commit()
 
 
-def log_shipped(conn, date_str: str, text: str) -> None:
-    conn.execute("""insert into days (date, shipped, logged_at) values (?,?,?)
-                    on conflict(date) do update set shipped = excluded.shipped,
-                                                    logged_at = excluded.logged_at""",
-                 (date_str, text.strip(), now()))
+def log_day(conn, date_str: str, did: str, missed: str = "") -> None:
+    """Write the day's two answers."""
+    conn.execute(
+        """insert into days (date, shipped, missed, logged_at) values (?,?,?,?)
+           on conflict(date) do update set shipped = excluded.shipped,
+                                           missed = excluded.missed,
+                                           logged_at = excluded.logged_at""",
+        (date_str, did.strip(), missed.strip(), now()))
     conn.commit()
 
 

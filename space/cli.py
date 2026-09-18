@@ -8,7 +8,8 @@
     space-cli define 4f2a --goal scoring --outcome "..." --kind ship \
                           --estimate 1h --next "..."
     space-cli start 4f2a / done 4f2a
-    space-cli shipped "the grade endpoint is live"
+    space-review                             # the day's two questions
+    space-cli day                            # read them back
     space-cli focus            # where today's hours went
     space-cli review           # stale work, estimate accuracy
 """
@@ -97,7 +98,12 @@ def cmd_today(conn, a):
 
     print(f"{ACC}{day}{OFF}   ship {shipped}/{done}   "
           f"distraction {fmt_minutes(mins)}")
-    print(f"{DIM}shipped: {log.shipped or 'not logged'}{OFF}")
+    if log.answered:
+        print(f"{DIM}did: {log.did}{OFF}")
+        if log.not_done:
+            print(f"{DIM}not: {log.not_done}{OFF}")
+    else:
+        print(f"{DIM}not answered{OFF}")
     for s in STATUS_KEYS:
         group = [t for t in items if t.status == s]
         print(f"\n{STATUS_LABELS[s]} ({len(group)})")
@@ -209,14 +215,19 @@ def cmd_node_rm(conn, a):
           + (f"; {len(tasks_hit)} task(s) lost their goal" if tasks_hit else ""))
 
 
-def cmd_shipped(conn, a):
+def cmd_day(conn, a):
+    """Read or write the day's two answers. Use `space-review` to be asked."""
     day = a.date or today()
-    text = " ".join(a.text) if a.text else ""
-    if not text:
-        print(db.day_log(conn, day).shipped or "not logged")
+    log = db.day_log(conn, day)
+    if not a.did and not a.missed:
+        if not log.answered:
+            print(f"{DIM}{day} not answered{OFF}")
+            return
+        print(f"{OK}did:{OFF} {log.did}")
+        print(f"{WARN}not:{OFF} {log.not_done or '—'}")
         return
-    db.log_shipped(conn, day, text)
-    print(f"logged for {day}: {text}")
+    db.log_day(conn, day, a.did or log.did, a.missed or log.not_done)
+    print(f"logged for {day}")
 
 
 def resolve_app(conn, text: str) -> tuple[str, str]:
@@ -465,10 +476,11 @@ def build_parser():
     s.add_argument("id")
     s.set_defaults(fn=cmd_node_rm)
 
-    s = add("shipped", help="log (or read) what shipped on a day")
-    s.add_argument("text", nargs="*")
+    s = add("day", help="read or write the day's two answers")
+    s.add_argument("--did", help="what important things you did")
+    s.add_argument("--missed", help="what important things you did not")
     s.add_argument("--date")
-    s.set_defaults(fn=cmd_shipped)
+    s.set_defaults(fn=cmd_day)
 
     s = add("focus", help="where the day's hours went")
     s.add_argument("--date")

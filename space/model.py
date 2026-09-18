@@ -172,19 +172,32 @@ class Task:
 
 @dataclass
 class Day:
-    """The day's one answer. 'nothing' is legal, recorded, and visible."""
+    """The day's two answers. 'nothing' is legal, recorded, and visible.
+
+    `shipped` holds what mattered that you did; it keeps its original name
+    from when there was only one question.
+    """
     date: str
     shipped: str | None = None
+    missed: str | None = None
     logged_at: str | None = None
 
     @property
+    def did(self) -> str:
+        return (self.shipped or "").strip()
+
+    @property
+    def not_done(self) -> str:
+        return (self.missed or "").strip()
+
+    @property
     def answered(self) -> bool:
-        return bool(self.shipped)
+        return bool(self.logged_at or self.did or self.not_done)
 
     @property
     def empty_day(self) -> bool:
-        """Answered, and the answer was that nothing happened."""
-        return (self.shipped or "").strip().lower() in ("nothing", "none", "-")
+        """Answered, and the answer was that nothing of note happened."""
+        return self.did.lower() in ("nothing", "none", "-", "")
 
 
 @dataclass
