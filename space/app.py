@@ -170,28 +170,47 @@ class App:
         return out
 
     def draw_header(self, w):
+        badges = self.badges()
+
+        # Lay the chips out first — they are the navigation and they win. The
+        # wordmark then takes whatever is left, shedding the greeting and then
+        # its own tail rather than being written over. Below about seventy
+        # columns the labels go too, but the numbers never do: losing the
+        # shortcut keys off the left edge is worse than losing their names.
+        def chip_for(i, key, label, full):
+            badge = f"·{badges[key]}" if badges.get(key) else ""
+            if full or key == self.view:
+                return f" {i + 1} {label}" + (f" {badge} " if badge else " ")
+            return f" {i + 1}{badge} "
+
+        full = sum(len(chip_for(i, k, l, True)) + 1
+                   for i, (k, l) in enumerate(VIEWS)) <= w - 12
+        widths = [chip_for(i, k, l, full) for i, (k, l) in enumerate(VIEWS)]
+        room = w - sum(len(c) + 1 for c in widths) - 6
+
         put(self.stdscr, 0, 1, "◤", attr(C_NEON, True))
-        put(self.stdscr, 0, 3, "KIAREZ", attr(C_NEON, True))
-        put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
-        put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
-        put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
+        if room >= 6:
+            put(self.stdscr, 0, 3, "KIAREZ", attr(C_NEON, True))
+        if room >= 18:
+            put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
+            put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
+        if room >= 20 + len(self.greeting):
+            put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
         put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
-        badges = self.badges()
         x = w - 4
-        for i, (key, label) in enumerate(reversed(VIEWS)):
-            n = len(VIEWS) - i
-            count = badges.get(key)
-            # The leading digit is the shortcut key; the badge needs to not
-            # read as a second one, hence the separator.
-            chip = f" {n} {label} " + (f"·{count} " if count else "")
+        for i in range(len(VIEWS) - 1, -1, -1):
+            key, label = VIEWS[i]
+            chip, count = widths[i], badges.get(key)
             x -= len(chip) + 1
+            if x < 1:
+                break                      # no room left; drop the rest
             on = key == self.view
             put(self.stdscr, 0, x, chip,
                 attr(C_SEL_ALT, True) if on else attr(C_DIM))
             if count and not on:
                 # The number is the point; keep it lit even when the chip isn't.
-                put(self.stdscr, 0, x + len(chip) - len(str(count)) - 2,
+                put(self.stdscr, 0, x + chip.index(f"·{count}"),
                     f"·{count}", attr(C_NEON, True))
 
         # The rule burns under the live view and fades away from it. On a
@@ -232,6 +251,19 @@ class App:
         put(self.stdscr, y, x + 3 + segments, fmt_minutes(distraction),
             attr(C_WARN if hot else C_DIM))
         x += segments + 11
+
+        # What you are on right now, and for how long — the one number the
+        # board can show that changes while you watch it.
+        doing = [t for t in db.tasks(self.conn, day=self.day, status="doing")]
+        if doing:
+            t = doing[0]
+            run = fmt_minutes(t.actual_minutes)
+            over = t.estimate_minutes and t.actual_minutes > t.estimate_minutes
+            put(self.stdscr, y, x, "◈", attr(C_DOING, self.pulse.on(0.5)))
+            put(self.stdscr, y, x + 2,
+                ellipsis(f"{t.title} {run}", max(12, w - x - 30)),
+                attr(C_WARN if over else C_DOING))
+            x += min(len(t.title) + len(run) + 6, max(18, w - x - 26))
 
         week = [db.usage_total(self.conn, add_days(self.day, -i), color="red")
                 for i in range(6, -1, -1)]
@@ -599,6 +631,15 @@ class App:
         put(self.stdscr, h - 3, max(10, w - len(stamp) - 4), stamp, attr(C_DIM))
         put(self.stdscr, h - 3, w - 2, "◢", attr(C_NEON))
 
+    # Longest first; the footer takes the first one that fits.
+    KEY_HINTS = [
+        "c capture · e define · space advance · s schedule · w answer · ? help · q quit",
+        "c capture · e define · space advance · w answer · ? help · q quit",
+        "c capture · e define · space advance · ? help",
+        "c · e · space · ? help",
+        "? help",
+    ]
+
     def draw_footer(self, h, w):
         self.status_rail(h, w)
         if self.message:
@@ -606,9 +647,9 @@ class App:
             put(self.stdscr, h - 2, 2, ("▸ " if fresh else "  ")
                 + ellipsis(self.message, w - 6),
                 attr(C_NEON if fresh else C_DIM, fresh))
-        put(self.stdscr, h - 1, 2,
-            "c capture · e define · space advance · s schedule · w answer · ? help · q quit",
-            attr(C_DIM))
+        hint = next((k for k in self.KEY_HINTS if len(k) <= w - 4),
+                    self.KEY_HINTS[-1])
+        put(self.stdscr, h - 1, 2, hint, attr(C_DIM))
 
     # --- actions ------------------------------------------------------------
 
@@ -775,6 +816,8 @@ class App:
             return True
         if not db.day_log(self.conn, review_day()).answered:
             return True
+        if db.tasks(self.conn, day=self.day, status="doing"):
+            return True                    # a running clock has to actually run
         return db.usage_total(self.conn, self.day, color="red") >= 3600
 
     def handle(self, ch) -> bool:

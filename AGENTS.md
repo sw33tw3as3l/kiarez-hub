@@ -66,8 +66,12 @@ Gotchas already paid for:
   main loop starts spinning.
 - `App.alive()` decides whether the main loop animates or blocks. Keep it
   cheap and keep it honest: an idle board must block.
-- **Run `python3 scripts/smoke.py` and `python3 scripts/edges.py` before
-  committing.** Neither an import nor a clean traceback check proves anything:
+- **Run `scripts/smoke.py`, `scripts/edges.py` and `scripts/sizes.py` before
+  committing.** sizes.py walks every view from 200x40 down to 24x8 — curses is
+  unforgiving about writes past the edge and a wide development window hides
+  all of it. Header, chips and the key hints are all width-degrading: chips
+  shed their labels before their numbers, because losing the shortcut keys off
+  the left edge is worse than losing their names. Neither an import nor a clean traceback check proves anything:
   a missing method only blows up on the frame that calls it, and a completely
   dead form raises nothing at all. smoke.py drives the real TUI in a pty
   through every view and panel with effects on and off, *and* asserts outcomes
