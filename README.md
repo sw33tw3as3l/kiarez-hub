@@ -109,6 +109,7 @@ session are the same number of minutes and nothing like the same day.
 
 ```bash
 space-cli focus                              # every watched app today
+space-cli focus --week                       # a row per app, a column per day
 space-cli focus --app telegram               # the full picture, by hour
 space-cli focus --app telegram --days 30
 space-cli watch                              # the list and its colours
@@ -131,6 +132,31 @@ stops counting — that's you walking away, not you working.
 
 It starts with your Hyprland session via `~/.config/hypr/custom/execs.lua`.
 `scripts/space-track.service` is there if you'd rather systemd supervise it.
+
+## The daily question
+
+One question a day, always the same one, asked with the day's facts on screen
+above it — finished tasks, ship count, screen time, Telegram checks. The facts
+are the point: it is hard to type "good day" underneath 23 Telegram checks and
+nothing shipped.
+
+```bash
+space-review            # or press w on the board
+```
+
+- **Only today can be answered.** At midnight the day locks; an unanswered day
+  stays blank forever. A journal you can backfill records what you wish had
+  happened.
+- **"nothing" is a real answer**, stored as such, and visible in the calendar.
+- No streaks, no score, no guilt — the numbers already do that job honestly.
+
+A notification fires at 21:30 (`SPACE_REVIEW_AT` to change it) if the day is
+still unanswered, and clicking it opens the review. If you miss it, the board
+says so the next time you open it. Neither one blocks you.
+
+**Sundays** add three more questions, where a week of data makes the answers
+real: what actually moved, what you kept avoiding (the tool already knows —
+it lists what you keep rolling forward), and the one thing you'll change.
 
 ## Scripting
 

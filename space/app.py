@@ -36,7 +36,7 @@ HELP = [
     ("space", "advance status — refuses to start an undefined task"),
     ("e / Enter", "define or edit"),
     ("s / S", "schedule onto the open day / send back to inbox"),
-    ("w", "log what shipped today"),
+    ("w", "answer today's question (the only one)"),
     ("a", "in Tree: add a child · A adds a root · m moves · x deletes"),
     ("[ ] t", "previous day / next day / today"),
     ("? q", "help / quit"),
@@ -60,6 +60,11 @@ class App:
         db.close_out(conn, today())
         if rolled:
             self.message = f"{rolled} unfinished task(s) rolled forward to today"
+        # The board is the backstop for the day's question: if the notification
+        # was missed, opening the board says so. It never blocks you.
+        if not db.day_log(conn, today()).answered:
+            note = "today's question is unanswered — press w"
+            self.message = f"{self.message} · {note}" if self.message else note
 
     # --- data ---------------------------------------------------------------
 
@@ -173,8 +178,10 @@ class App:
         if log.shipped:
             put(self.stdscr, y, x, f"shipped: {ellipsis(log.shipped, w - x - 4)}",
                 attr(C_DONE))
-        elif self.day <= today():
-            put(self.stdscr, y, x, "nothing logged — press w", attr(C_DIM))
+        elif self.day == today():
+            put(self.stdscr, y, x, "unanswered — press w", attr(C_WARN))
+        elif self.day < today():
+            put(self.stdscr, y, x, "unanswered, and closed", attr(C_DIM))
 
     def draw_day(self, top, height, w):
         self.day_strip(top - 1, w)
@@ -386,30 +393,45 @@ class App:
         # 1. Where the last seven days actually went.
         put(self.stdscr, y, 2, "Where the last 7 days went", attr(C_ACCENT, True))
         y += 1
-        span = [add_days(today(), -i) for i in range(7)]
-        totals = {}
-        for day in span:
-            for app, label, color, secs in db.usage(self.conn, day):
-                prev = totals.get(label, (app, color, 0))[2]
-                totals[label] = (app, color, prev + secs)
-        if totals:
-            # Bars are relative to the biggest row — a fixed scale just pins
-            # everything to the cap and stops being a comparison.
-            peak = max(v[2] for v in totals.values()) or 1
-            for label, (app, color, secs) in sorted(totals.items(),
-                                                    key=lambda kv: -kv[1][2])[:5]:
-                mins = secs // 60
-                agg = db.usage_range(self.conn, app, span)
-                bar = "█" * max(1, round(24 * secs / peak))
-                line = (f"{label:12} {fmt_minutes(mins):>7}  {bar:<24}  "
-                        f"{agg['opens']} checks · {agg['opens'] // 7}/day · "
-                        f"longest {fmt_minutes(agg['longest'] // 60)}")
-                put(self.stdscr, y, 4, line,
-                    attr(APP_COLOR.get(color, C_DIM), color == "red"))
-                y += 1
-        else:
+        span = [add_days(today(), -i) for i in range(6, -1, -1)]   # oldest first
+        matrix = db.usage_matrix(self.conn, span)
+
+        col, left = 8, 16
+        put(self.stdscr, y, left - 14, "app", attr(C_DIM))
+        for i, d in enumerate(span):
+            head = date.fromisoformat(d).strftime("%a")
+            a = attr(C_ACCENT, True) if d == today() else attr(C_DIM)
+            put(self.stdscr, y, left + i * col, head.rjust(col - 1), a)
+        put(self.stdscr, y, left + 7 * col + 2, "total".rjust(6), attr(C_DIM))
+        y += 1
+
+        if not matrix:
             put(self.stdscr, y, 4, "nothing recorded — is space-track running?",
                 attr(C_DIM))
+            y += 1
+        for row in matrix[:5]:
+            color = APP_COLOR.get(row["color"], C_DIM)
+            bold = row["color"] == "red"
+            put(self.stdscr, y, 2, ellipsis(row["label"], 13), attr(color, bold))
+            for i, d in enumerate(span):
+                secs = row["by_day"].get(d, 0)
+                cell = fmt_minutes(secs // 60) if secs else "·"
+                put(self.stdscr, y, left + i * col, cell.rjust(col - 1),
+                    attr(color if secs else C_DIM, bold and secs >= 3600))
+            put(self.stdscr, y, left + 7 * col + 2,
+                fmt_minutes(row["total"] // 60).rjust(6), attr(color, bold))
+            y += 1
+
+        if matrix:
+            put(self.stdscr, y, 2, "all".ljust(13), attr(C_DIM))
+            for i, d in enumerate(span):
+                total = sum(r["by_day"].get(d, 0) for r in matrix)
+                put(self.stdscr, y, left + i * col,
+                    (fmt_minutes(total // 60) if total else "·").rjust(col - 1),
+                    attr(C_DIM))
+            grand = sum(r["total"] for r in matrix)
+            put(self.stdscr, y, left + 7 * col + 2,
+                fmt_minutes(grand // 60).rjust(6), attr(C_DIM))
             y += 1
         y += 1
 
@@ -457,7 +479,7 @@ class App:
         if self.message:
             put(self.stdscr, h - 2, 2, ellipsis(self.message, w - 4), attr(C_WARN))
         put(self.stdscr, h - 1, 2,
-            "c capture · e define · space advance · s schedule · w shipped · ? help · q quit",
+            "c capture · e define · space advance · s schedule · w answer · ? help · q quit",
             attr(C_DIM))
 
     # --- actions ------------------------------------------------------------
@@ -509,8 +531,14 @@ class App:
             self.message += " — that's bigger than half a day; consider splitting it"
 
     def log_shipped(self):
+        """The one daily question. Only today is writable — a day locks at
+        midnight, because a journal you can backfill records what you wish had
+        happened rather than what did."""
+        if self.day != today():
+            self.message = f"{self.day} is closed — only today can be answered"
+            return
         existing = db.day_log(self.conn, self.day).shipped or ""
-        text = prompt(self.stdscr, f"what shipped on {self.day}?", existing)
+        text = prompt(self.stdscr, "what happened today?", existing)
         if text is None:
             return
         db.log_shipped(self.conn, self.day, text or "nothing")

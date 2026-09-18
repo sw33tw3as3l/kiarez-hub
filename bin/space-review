@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# The end-of-day question. Only today can be answered.
+exec python3 -c "import sys, pathlib
+sys.path.insert(0, str(pathlib.Path('$0').resolve().parent.parent))
+from space.review import main; sys.exit(main(sys.argv[1:]))" "$@"

@@ -10,7 +10,9 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from .model import Day, Node, Task, Tree, add_days, today, utc_now
+from datetime import date, timedelta
+
+from .model import Day, Node, Task, Tree, Week, add_days, today, utc_now
 
 SCHEMA = """
 -- A forest. parent_id null means a root. A node with children reads as an
@@ -50,11 +52,22 @@ create index if not exists tasks_day_idx    on tasks (day);
 create index if not exists tasks_node_idx   on tasks (node_id);
 create index if not exists tasks_status_idx on tasks (status);
 
--- One row per day: the honest end-of-day answer to "what shipped?"
+-- One row per day: the single end-of-day answer. Writable only on the day
+-- itself — a locked-out day stays blank, and the blank is data too.
 create table if not exists days (
   date      text primary key,
   shipped   text,
   logged_at text
+);
+
+-- The Sunday review. Three questions a week, where a week of data makes the
+-- answers real rather than guessed.
+create table if not exists weeks (
+  week_start text primary key,
+  moved      text,
+  avoided    text,
+  change     text,
+  logged_at  text
 );
 
 -- Focused time per app per day, written by the tracker.
@@ -222,6 +235,31 @@ def task(conn, task_id: str) -> Task | None:
 def day_log(conn, date_str: str) -> Day:
     row = conn.execute("select * from days where date = ?", (date_str,)).fetchone()
     return Day(**dict(row)) if row else Day(date=date_str)
+
+
+def week_start(date_str: str) -> str:
+    """The Monday of that date's week — the key a weekly review is filed under."""
+    d = date.fromisoformat(date_str)
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+def week_log(conn, date_str: str) -> Week:
+    start = week_start(date_str)
+    row = conn.execute("select * from weeks where week_start = ?",
+                       (start,)).fetchone()
+    return Week(**dict(row)) if row else Week(week_start=start)
+
+
+def log_week(conn, date_str: str, moved: str, avoided: str, change: str) -> None:
+    conn.execute(
+        """insert into weeks (week_start, moved, avoided, change, logged_at)
+           values (?,?,?,?,?)
+           on conflict(week_start) do update set
+             moved = excluded.moved, avoided = excluded.avoided,
+             change = excluded.change, logged_at = excluded.logged_at""",
+        (week_start(date_str), moved.strip(), avoided.strip(), change.strip(),
+         now()))
+    conn.commit()
 
 
 def logged_days(conn) -> dict[str, str]:
@@ -439,6 +477,29 @@ def usage_detail(conn, app: str, date_str: str) -> dict:
                                   "longest": 0}
     base["hours"] = hours
     return base
+
+
+def usage_matrix(conn, days: list[str]) -> list[dict]:
+    """Per-app, per-day seconds: [{app, label, color, by_day{date: secs}, total}].
+
+    Sorted by total, biggest first. Apps with no time in the span are dropped.
+    """
+    if not days:
+        return []
+    marks = ",".join("?" * len(days))
+    rows = conn.execute(
+        f"""select u.app, coalesce(w.label, u.app) label,
+                   coalesce(w.color, 'dim') color, u.date, u.seconds
+              from app_usage u left join watchlist w on w.app = u.app
+             where u.date in ({marks}) and u.seconds > 0""", days)
+    apps: dict[str, dict] = {}
+    for r in rows:
+        entry = apps.setdefault(r["app"], {
+            "app": r["app"], "label": r["label"], "color": r["color"],
+            "by_day": {}, "total": 0})
+        entry["by_day"][r["date"]] = entry["by_day"].get(r["date"], 0) + r["seconds"]
+        entry["total"] += r["seconds"]
+    return sorted(apps.values(), key=lambda e: -e["total"])
 
 
 def usage_range(conn, app: str, days: list[str]) -> dict:

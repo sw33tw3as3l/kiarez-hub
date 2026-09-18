@@ -232,6 +232,8 @@ def cmd_focus(conn, a):
     day = a.date or today()
     if a.app:
         return focus_detail(conn, resolve_app(conn, a.app), day, a.days)
+    if a.week:
+        return focus_matrix(conn, day, a.days)
 
     rows = db.usage(conn, day)
     if not rows:
@@ -250,6 +252,33 @@ def cmd_focus(conn, a):
     red = db.usage_total(conn, day, color="red")
     print(f"{DIM}tracked {fmt_minutes(total // 60)}{OFF}"
           f"   {WARN}red {fmt_minutes(red // 60)}{OFF}")
+
+
+def focus_matrix(conn, day, days):
+    """One row per app, one column per day — the whole span at a glance."""
+    from datetime import date as _date
+    span = [add_days(day, -i) for i in range(days - 1, -1, -1)]
+    matrix = db.usage_matrix(conn, span)
+    if not matrix:
+        print(f"{DIM}nothing recorded — is space-track running?{OFF}")
+        return
+
+    head = "".join(_date.fromisoformat(d).strftime("%a %d").rjust(8) for d in span)
+    print(f"{DIM}{'app':<14}{head}{'total'.rjust(9)}{OFF}")
+    for row in matrix:
+        tint = app_color(row["color"])
+        cells = "".join(
+            (fmt_minutes(row['by_day'][d] // 60) if row["by_day"].get(d) else "·"
+             ).rjust(8) for d in span)
+        print(f"{tint}{row['label']:<14}{cells}"
+              f"{fmt_minutes(row['total'] // 60).rjust(9)}{OFF}")
+    def day_total(d):
+        secs = sum(r["by_day"].get(d, 0) for r in matrix)
+        return fmt_minutes(secs // 60) if secs else "·"     # 0m is not "·"
+
+    totals = "".join(day_total(d).rjust(8) for d in span)
+    grand = sum(r["total"] for r in matrix)
+    print(f"{DIM}{'all':<14}{totals}{fmt_minutes(grand // 60).rjust(9)}{OFF}")
 
 
 def focus_detail(conn, app_label, day, days):
@@ -444,6 +473,8 @@ def build_parser():
     s = add("focus", help="where the day's hours went")
     s.add_argument("--date")
     s.add_argument("--app", help="drill into one watched app, e.g. telegram")
+    s.add_argument("--week", action="store_true",
+                   help="a row per app, a column per day")
     s.add_argument("--days", type=int, default=7,
                    help="span for the totals shown with --app")
     s.set_defaults(fn=cmd_focus)

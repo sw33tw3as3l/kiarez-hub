@@ -172,10 +172,33 @@ class Task:
 
 @dataclass
 class Day:
-    """What you said shipped that day. 'nothing' is a legal, visible answer."""
+    """The day's one answer. 'nothing' is legal, recorded, and visible."""
     date: str
     shipped: str | None = None
     logged_at: str | None = None
+
+    @property
+    def answered(self) -> bool:
+        return bool(self.shipped)
+
+    @property
+    def empty_day(self) -> bool:
+        """Answered, and the answer was that nothing happened."""
+        return (self.shipped or "").strip().lower() in ("nothing", "none", "-")
+
+
+@dataclass
+class Week:
+    """The Sunday review: what moved, what you avoided, what changes."""
+    week_start: str
+    moved: str | None = None
+    avoided: str | None = None
+    change: str | None = None
+    logged_at: str | None = None
+
+    @property
+    def answered(self) -> bool:
+        return bool(self.moved or self.avoided or self.change)
 
 
 def utc_now() -> datetime:

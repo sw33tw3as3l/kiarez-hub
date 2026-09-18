@@ -7,7 +7,7 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 target="${1:-$HOME/.local/bin}"
 mkdir -p "$target"
 
-for cmd in space space-cli space-track; do
+for cmd in space space-cli space-track space-review; do
   ln -sf "$repo/bin/$cmd" "$target/$cmd"
   echo "linked $target/$cmd -> $repo/bin/$cmd"
 done
@@ -19,5 +19,5 @@ case ":$PATH:" in
 esac
 
 echo
-echo "To have the focus tracker start with your session, see"
+echo "To start the tracker and the evening reminder with your session, see"
 echo "  scripts/space-track.service"
