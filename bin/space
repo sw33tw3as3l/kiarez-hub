@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Launch the board TUI.
+exec python3 -c "import sys, pathlib
+sys.path.insert(0, str(pathlib.Path('$0').resolve().parent.parent))
+from space.app import run; run()"

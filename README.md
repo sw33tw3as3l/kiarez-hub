@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# kiarez space
 
-## Getting Started
+A task board that runs in your terminal. Four views — day board, calendar,
+long-term, goals — over a single SQLite file. Python standard library only:
+nothing to install, no server, no browser, no network.
 
-First, run the development server:
+Replaces the previous Next.js + Supabase web version; the old code is still
+in this repository's git history.
+
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+./bin/space
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Put it on your PATH once:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+./scripts/install.sh
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then `space` opens the board and `space-cli` scripts against it.
 
-## Learn More
+## Keys
 
-To learn more about Next.js, take a look at the following resources:
+| Key | Does |
+| --- | --- |
+| `1`–`4`, `Tab` | Board / Calendar / Long-term / Goals |
+| `j` `k` | move down / up |
+| `h` `l` | move between To Do / Doing / Done |
+| `J` `K` | reorder a task inside its column |
+| `space` | advance status (todo → doing → done) |
+| `n` / `g` | new task / new goal |
+| `e`, `Enter` | edit |
+| `x` | delete (asks first) |
+| `[` `]` | previous / next day |
+| `t` | jump to today |
+| `?` | help |
+| `q` | quit |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+In a form: type to edit, `←`/`→` change a choice, `Enter` next field,
+`Ctrl-S` or `F2` save, `Esc` cancel.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## The rules it enforces
 
-## Deploy on Vercel
+A task is not accepted until it has all four:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- a **goal** it belongs to
+- an **outcome** — the definition of done
+- an **effort** size
+- a **next action** — the first physical step
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Anything half a day or bigger is refused on the day board; it belongs in
+Long-term, split into smaller pieces. This is the same rule the web version
+enforced, moved into `space/model.py` where both the TUI and the CLI use it.
+
+## Scripting it
+
+```bash
+space-cli today                  # the day board
+space-cli ls --status doing      # filter by status, category, date, goal
+space-cli ls --json              # machine-readable
+space-cli done 4f2a              # any unambiguous id prefix, like git
+space-cli goals
+space-cli stats
+space-cli export > backup.json
+```
+
+`--plain` drops the ANSI color, for piping.
+
+## Data
+
+`~/.kiarez-space/data.db`, or wherever `KIAREZ_SPACE_DB` points.
+
+```bash
+./scripts/backup.sh              # timestamped JSON + db copy, keeps the last 20
+```
+
+`scripts/import-export.py` loads a `supabase-export.json` into the local
+database. It already ran once for the migration — 18 goals and 195 tasks —
+and is idempotent if you ever need it again.

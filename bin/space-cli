@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Scriptable CLI over the same database.
+exec python3 -c "import sys, pathlib
+sys.path.insert(0, str(pathlib.Path('$0').resolve().parent.parent))
+from space.cli import main; sys.exit(main(sys.argv[1:]))" "$@"
