@@ -129,6 +129,12 @@ def daily(conn, day: str) -> bool:
         existing = log.did if key == "did" else log.not_done
         got = ask(question, hint, existing)
         if got is None:
+            # Backing out of the second question shouldn't throw away the
+            # first — keep what was said, leave the rest blank.
+            if answers.get("did"):
+                db.log_day(conn, day, answers["did"], "")
+                print(f"{DIM}kept what you answered{OFF}")
+                return True
             return False
         answers[key] = got
     db.log_day(conn, day, answers["did"] or "nothing", answers["missed"])

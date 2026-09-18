@@ -88,6 +88,7 @@ date — but the Review view knows exactly what you keep pushing.
 | `a` `A` | in Tree: add a child / add a root |
 | `m` `x` | in Tree: move (reparent) / delete a node and its subtree |
 | `[` `]` `t` | previous day / next day / today |
+| `<` `>` | move the selected task to another day |
 | `?` `q` | help / quit |
 
 In a form: type to edit, `←`/`→` change a choice — every option is on screen

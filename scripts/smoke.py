@@ -158,6 +158,26 @@ def check_outcomes(failures: list) -> None:
                and row["kind"] and row["estimate"],
                f"row={dict(row) if row else None}")
 
+        # < and > must move the task, not the view.
+        db = f"{tmp}/outcome-move.db"
+        env = dict(os.environ, KIAREZ_SPACE_DB=db)
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True, env=env)
+        cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Shift me"],
+                             capture_output=True, text=True, env=env).stdout.strip()
+        subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
+                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--next", "go"], capture_output=True, env=env)
+        subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
+                       capture_output=True, env=env)
+        import datetime
+        conn = board(db, ">")
+        row = conn.execute("select day from tasks").fetchone()
+        expect("> moves the task to tomorrow",
+               row and row["day"] == (datetime.date.today()
+                                      + datetime.timedelta(days=1)).isoformat(),
+               f"day={row['day'] if row else None}")
+
         # Advancing a task must move its status.
         db = f"{tmp}/outcome-status.db"
         env = dict(os.environ, KIAREZ_SPACE_DB=db)

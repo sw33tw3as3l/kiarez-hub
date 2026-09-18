@@ -22,6 +22,7 @@ import sys
 from dataclasses import asdict
 
 from . import db
+from .review import review_day
 from .model import (
     ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
     STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
@@ -52,6 +53,19 @@ def resolve(conn, prefix: str) -> str:
     if len(rows) > 1:
         sys.exit(f"'{prefix}' matches {len(rows)} tasks — use a longer prefix")
     return rows[0]["id"]
+
+
+def valid_date(text: str) -> str:
+    """Reject anything that isn't a real YYYY-MM-DD.
+
+    Without this a typo silently becomes a day with nothing on it, which
+    reads exactly like a day on which you did nothing.
+    """
+    try:
+        from datetime import date as _date
+        return _date.fromisoformat(text).isoformat()
+    except ValueError:
+        sys.exit(f"'{text}' is not a date — use YYYY-MM-DD")
 
 
 def resolve_node(conn, text: str) -> str:
@@ -88,7 +102,7 @@ def cmd_capture(conn, a):
 
 
 def cmd_today(conn, a):
-    day = a.date or today()
+    day = valid_date(a.date) if a.date else today()
     db.roll_forward(conn)
     items = db.tasks(conn, day=day)
     paths = db.node_paths(conn)
@@ -123,7 +137,7 @@ def cmd_inbox(conn, a):
 def cmd_ls(conn, a):
     node = resolve_node(conn, a.goal) if a.goal else None
     items = (db.subtree_tasks(conn, node) if node and a.deep else
-             db.tasks(conn, day=a.date if a.date else "__any__",
+             db.tasks(conn, day=valid_date(a.date) if a.date else "__any__",
                       status=a.status, node_id=node))
     if a.json:
         print(json.dumps([asdict(t) for t in items], indent=2))
@@ -162,7 +176,7 @@ def cmd_status(conn, a):
 
 def cmd_schedule(conn, a):
     tid = resolve(conn, a.id)
-    day = None if a.inbox else (a.date or today())
+    day = None if a.inbox else (valid_date(a.date) if a.date else today())
     if day:
         blockers = can_start(db.task(conn, tid))
         if blockers:
@@ -199,6 +213,8 @@ def cmd_node_add(conn, a):
 
 
 def cmd_node_mv(conn, a):
+    if not a.root and not a.parent:
+        sys.exit("say where it goes: --parent <node>, or --root")
     nid = resolve_node(conn, a.id)
     parent = None if a.root else resolve_node(conn, a.parent)
     err = db.move_node(conn, nid, parent)
@@ -217,8 +233,12 @@ def cmd_node_rm(conn, a):
 
 def cmd_day(conn, a):
     """Read or write the day's two answers. Use `space-review` to be asked."""
-    day = a.date or today()
+    day = valid_date(a.date) if a.date else today()
     log = db.day_log(conn, day)
+    if (a.did or a.missed) and day != review_day():
+        # The lock is the whole point of the daily question; the CLI must not
+        # be a way around it.
+        sys.exit(f"{day} is closed — only {review_day()} can still be answered")
     if not a.did and not a.missed:
         if not log.answered:
             print(f"{DIM}{day} not answered{OFF}")
@@ -240,7 +260,7 @@ def resolve_app(conn, text: str) -> tuple[str, str]:
 
 
 def cmd_focus(conn, a):
-    day = a.date or today()
+    day = valid_date(a.date) if a.date else today()
     if a.app:
         return focus_detail(conn, resolve_app(conn, a.app), day, a.days)
     if a.week:

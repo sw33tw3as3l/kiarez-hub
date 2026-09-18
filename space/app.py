@@ -44,6 +44,7 @@ HELP = [
     ("w", "answer today's question (the only one)"),
     ("a", "in Tree: add a child · A adds a root · m moves · x deletes"),
     ("[ ] t", "previous day / next day / today"),
+    ("< >", "move the selected task to another day"),
     ("? q", "help / quit"),
 ]
 
@@ -633,7 +634,8 @@ class App:
 
     # Longest first; the footer takes the first one that fits.
     KEY_HINTS = [
-        "c capture · e define · space advance · s schedule · w answer · ? help · q quit",
+        "c capture · e define · space advance · < > move day · w answer · ? help · q quit",
+        "c capture · e define · space advance · < > move · w answer · ? help · q quit",
         "c capture · e define · space advance · w answer · ? help · q quit",
         "c capture · e define · space advance · ? help",
         "c · e · space · ? help",
@@ -877,6 +879,13 @@ class App:
             self.task_form()
         elif ch in (ord("e"), curses.KEY_ENTER, 10, 13) and t:
             self.task_form(t)
+        elif ch in (ord(">"), ord("<")) and t and t.day:
+            # Move the task, not the view. [ and ] walk the days; < and >
+            # carry the selected card with you.
+            moved = add_days(t.day, 1 if ch == ord(">") else -1)
+            db.schedule(self.conn, t.id, moved)
+            self.message_at = time.monotonic()
+            self.message = f"{ellipsis(t.title, 30)} → {moved}"
         elif ch == ord("S") and t:
             db.schedule(self.conn, t.id, None)
             self.message_at = time.monotonic()
