@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Drive the real TUI in a pty and fail on any traceback.
+"""Drive the real TUI in a pty and check what it actually did.
 
-Importing a module proves almost nothing about a curses app: a method can go
-missing and only blow up on the frame that calls it. This walks every view,
-opens every panel, and answers the day's questions, then greps the output for
-a traceback. Run it before committing anything that touches the UI.
+Two layers, because each caught a bug the other missed:
+
+  · journeys — walk every view and panel, fail on any traceback. A method can
+    go missing and only blow up on the frame that calls it, which no import
+    check will ever see.
+  · outcomes — do the thing, then assert the database changed. A whole form
+    once went dead (every keystroke landing in the last field) while the
+    traceback check stayed perfectly green.
 
     python3 scripts/smoke.py
 """
@@ -73,6 +77,82 @@ def drive(db_path: Path, keys: str, fx: bool) -> str:
     return out.decode(errors="replace")
 
 
+ARROW = "\x1bOC"          # application-mode right arrow, which is what curses expects
+
+
+def check_outcomes(failures: list) -> None:
+    """Do a thing through the UI, then ask the database whether it happened."""
+    import sqlite3
+
+    def board(db, keys):
+        drive(db, keys, fx=False)
+        conn = sqlite3.connect(db)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def expect(name, ok, detail=""):
+        if ok:
+            print(f"ok    {name}")
+        else:
+            failures.append(f"{name}\n  {detail}")
+            print(f"FAIL  {name}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # A task added through the form must arrive complete.
+        db = f"{tmp}/outcome-form.db"
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True,
+                       env=dict(os.environ, KIAREZ_SPACE_DB=db))
+        keys = ("n" + "Formed task" + "\r" + "\r" + "it is done" + "\r"
+                + ARROW + "\r" + ARROW + "\r" + "first step" + "\r" + "\x13")
+        conn = board(db, keys)
+        row = conn.execute("select * from tasks where title = 'Formed task'").fetchone()
+        expect("form creates a complete task", row is not None
+               and all(row[c] for c in ("outcome", "kind", "estimate",
+                                        "next_action", "node_id")),
+               f"row={dict(row) if row else None}")
+
+        # Capture must land one row in the inbox, with no day set.
+        db = f"{tmp}/outcome-capture.db"
+        conn = board(db, "c" + "a captured thought" + "\r")
+        row = conn.execute("select * from tasks where day is null").fetchone()
+        expect("capture lands in the inbox", row is not None
+               and row["title"] == "a captured thought", f"row={dict(row) if row else None}")
+
+        # The day's two questions must both be stored.
+        db = f"{tmp}/outcome-day.db"
+        conn = board(db, "w" + "did this" + "\r" + "missed that" + "\r")
+        row = conn.execute("select * from days").fetchone()
+        expect("both daily answers are saved", row is not None
+               and row["shipped"] == "did this" and row["missed"] == "missed that",
+               f"row={dict(row) if row else None}")
+
+        # Building the tree from the board must nest.
+        db = f"{tmp}/outcome-tree.db"
+        conn = board(db, "4A" + "Root" + "\r" + "a" + "Child" + "\r")
+        rows = {r["name"]: r["parent_id"] for r in conn.execute("select * from nodes")}
+        expect("tree adds a root and a child", len(rows) == 2
+               and rows.get("Child") is not None and rows.get("Root") is None,
+               f"nodes={rows}")
+
+        # Advancing a task must move its status.
+        db = f"{tmp}/outcome-status.db"
+        env = dict(os.environ, KIAREZ_SPACE_DB=db)
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True, env=env)
+        cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Do it"],
+                             capture_output=True, text=True, env=env).stdout.strip()
+        subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
+                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--next", "go"], capture_output=True, env=env)
+        subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
+                       capture_output=True, env=env)
+        conn = board(db, " ")
+        row = conn.execute("select status from tasks").fetchone()
+        expect("space advances status", row and row["status"] == "doing",
+               f"status={row['status'] if row else None}")
+
+
 def main() -> int:
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -102,6 +182,9 @@ def main() -> int:
                 print(f"FAIL  {name}")
             else:
                 print(f"ok    {name}")
+
+    print()
+    check_outcomes(failures)
 
     if failures:
         print(f"\n{len(failures)} failure(s):\n")

@@ -155,7 +155,7 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
         h, w = stdscr.getmaxyx()
         width = min(w - 4, 96)
         left = max(1, (w - width) // 2)
-        rows = sum(2 + bool(f.hint and i == idx) for i, f in enumerate(fields))
+        rows = sum(2 + bool(fld.hint and i == idx) for i, fld in enumerate(fields))
         height = min(h - 1, rows + 6 + (len(problems) + 1 if problems else 0))
         top = max(0, (h - height) // 2)
 
@@ -164,31 +164,31 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
 
         y = top + 2
         label_x, value_x = left + 3, left + 22
-        for i, f in enumerate(fields):
+        for i, field in enumerate(fields):
             selected = i == idx
             marker = "▸" if selected else " "
-            label = f.label + (" *" if f.required else "")
+            label = field.label + (" *" if field.required else "")
             put(stdscr, y, label_x - 2, marker, attr(C_NEON, True))
             put(stdscr, y, label_x, label,
                 attr(C_ACCENT if selected else C_DIM, selected))
 
             room = width - (value_x - left) - 4
-            if f.kind == "choice" and f.choices:
+            if field.kind == "choice" and field.choices:
                 # Every option on the row, the current one lit. Far clearer
                 # than a single value you have to arrow through blind.
                 x = value_x
-                for val, text in f.choices:
+                for val, text in field.choices:
                     chip = f" {ellipsis(text, 22)} "
                     if x - left + len(chip) > width - 3:
                         put(stdscr, y, x, "…", attr(C_DIM))
                         break
-                    on = val == f.value
+                    on = val == field.value
                     put(stdscr, y, x, chip,
                         attr(C_SEL if on and selected else
                              (C_NEON if on else C_DIM), on))
                     x += len(chip) + 1
             else:
-                text = f.value or ""
+                text = field.value or ""
                 box = attr(C_GHOST) if not (selected and editing) else attr(C_DEEP)
                 put(stdscr, y, value_x, ellipsis(text, room).ljust(room), box)
                 if selected and editing:
@@ -197,8 +197,8 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
                 elif selected and not text:
                     put(stdscr, y, value_x, "enter to type", attr(C_DIM))
 
-            if selected and f.hint:
-                put(stdscr, y + 1, value_x, ellipsis(f.hint, room), attr(C_VIOLET))
+            if selected and field.hint:
+                put(stdscr, y + 1, value_x, ellipsis(field.hint, room), attr(C_VIOLET))
                 y += 1
             y += 2
 
@@ -212,6 +212,7 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
         put(stdscr, top + height - 2, label_x, keys, attr(C_DIM))
         stdscr.refresh()
 
+        f = fields[idx]          # the selected field — never the loop's last
         ch = stdscr.getch()
         if ch == -1:
             continue                                   # animation frame
