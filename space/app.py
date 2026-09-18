@@ -38,6 +38,7 @@ APP_COLOR = {"red": C_WARN, "yellow": C_DOING, "green": C_DONE,
 HELP = [
     ("1-5 / Tab", "switch view"),
     ("c", "capture — one line, no fields, from any view"),
+    ("/", "filter the board · empty clears it"),
     ("j k / h l", "move · J K reorder"),
     ("space", "advance status — refuses to start an undefined task"),
     ("e / Enter", "define or edit"),
@@ -64,6 +65,7 @@ class App:
         self.pulse = fx.Pulse(1.3)
         self.message_at = 0.0
         self.glitch_until = 0.0
+        self.filter = ""
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
@@ -96,6 +98,11 @@ class App:
 
         def walk(parent, depth):
             for n in t.kids(parent):
+                # A branch stays visible when anything beneath it matches,
+                # otherwise filtering a tree just empties it.
+                subtree = [n] + t.descendants(n.id)
+                if self.filter and not any(self.matches(x.name) for x in subtree):
+                    continue
                 out.append((n, depth))
                 if n.id not in self.collapsed:
                     walk(n.id, depth + 1)
@@ -110,8 +117,19 @@ class App:
         self.list_row = min(self.list_row, len(items) - 1)
         return items[self.list_row][0]
 
+    def matches(self, text: str) -> bool:
+        return not self.filter or self.filter in (text or "").lower()
+
+    def keep(self, tasks):
+        """Apply the active filter — title, outcome and next action all count."""
+        if not self.filter:
+            return tasks
+        return [t for t in tasks
+                if self.matches(t.title) or self.matches(t.outcome)
+                or self.matches(t.next_action)]
+
     def columns(self):
-        items = db.tasks(self.conn, day=self.day)
+        items = self.keep(db.tasks(self.conn, day=self.day))
         return {s: [t for t in items if t.status == s] for s in STATUS_KEYS}
 
     def selected(self):
@@ -122,7 +140,7 @@ class App:
         return items[self.row]
 
     def inbox(self):
-        return db.tasks(self.conn, inbox=True)
+        return self.keep(db.tasks(self.conn, inbox=True))
 
     def selected_inbox(self):
         items = self.inbox()
@@ -196,8 +214,11 @@ class App:
         if room >= 18:
             put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
             put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
-        if room >= 20 + len(self.greeting):
+        if room >= 20 + len(self.greeting) and not self.filter:
             put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
+        if self.filter and room >= 14:
+            put(self.stdscr, 0, min(20, max(3, room - 12)),
+                ellipsis(f"/{self.filter}", 18), attr(C_SEL_ALT, True))
         put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
         x = w - 4
@@ -490,6 +511,10 @@ class App:
             put(self.stdscr, top, 2, f"↑ {start} above", attr(C_DIM))
         y = top + (1 if start else 0)
 
+        # Indentation is capped, otherwise a deep chain walks off the right
+        # edge and the nodes simply stop being drawn. Past the cap the depth
+        # is written as a number instead of as whitespace.
+        max_indent = max(2, min(24, w // 4))
         for i, (node, depth) in enumerate(items):
             if i < start:
                 continue
@@ -499,12 +524,12 @@ class App:
             leaf = t.is_leaf(node.id)
             marker = "  " if leaf else ("▾ " if node.id not in self.collapsed
                                         else "▸ ")
-            x = 2 + depth * 2
+            indent = min(depth * 2, max_indent)
+            x = 2 + indent
+            if depth * 2 > max_indent:
+                put(self.stdscr, y, x - 2, f"{depth}", attr(C_VIOLET))
             on = i == self.list_row
             label = marker + node.name
-            put(self.stdscr, y, x, ("▸" if on else " ") + label,
-                attr(C_SEL, True) if on else
-                attr(C_DONE if leaf else C_ACCENT, not leaf))
 
             own = db.tasks(self.conn, node_id=node.id)
             sub = db.subtree_tasks(self.conn, node.id)
@@ -513,7 +538,13 @@ class App:
             tail = f"{open_now} open · {shipped}/{finished} shipped"
             if not leaf and len(sub) != len(own):
                 tail += f" · {len(sub) - len(own)} below"
-            put(self.stdscr, y, max(x + len(label) + 3, w - len(tail) - 4), tail,
+
+            # The name gets whatever the tail leaves, never a fixed guess.
+            room = max(8, w - x - cols(tail) - 7)
+            put(self.stdscr, y, x, ("▸" if on else " ") + ellipsis(label, room),
+                attr(C_SEL, True) if on else
+                attr(C_DONE if leaf else C_ACCENT, not leaf))
+            put(self.stdscr, y, max(x + room + 2, w - cols(tail) - 4), tail,
                 attr(C_DIM))
             y += 1
 
@@ -666,6 +697,20 @@ class App:
         if n < 12:
             return "a little more and you'll know what it meant tomorrow", C_VIOLET
         return f"{n} characters · enter drops it in the inbox", C_DONE
+
+    def filter_react(self, value: str):
+        """Count the matches while you type, so you know before you commit."""
+        needle = value.strip().lower()
+        if not needle:
+            return "empty clears the filter", C_DIM
+        saved, self.filter = self.filter, needle
+        try:
+            hits = len(self.keep(db.tasks(self.conn))) + len(
+                [n for n in db.nodes(self.conn) if self.matches(n.name)])
+        finally:
+            self.filter = saved
+        return (f"{hits} match{'' if hits == 1 else 'es'}",
+                C_DONE if hits else C_WARN)
 
     def capture(self):
         """One line, no fields, from anywhere. Lands in the inbox."""
@@ -833,6 +878,16 @@ class App:
             return True
         if ch == ord("c"):
             self.capture()
+            return True
+        if ch == ord("/"):
+            found = prompt(self.stdscr, "filter", self.filter,
+                           react=self.filter_react)
+            if found is not None:
+                self.filter = found.strip().lower()
+                self.list_row = self.row = 0
+                self.message_at = time.monotonic()
+                self.message = (f"filtering on “{self.filter}” — / then enter "
+                                f"to clear") if self.filter else "filter cleared"
             return True
         if ch == 9:
             i = [k for k, _ in VIEWS].index(self.view)

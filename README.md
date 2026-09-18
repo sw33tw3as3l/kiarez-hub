@@ -80,6 +80,7 @@ date — but the Review view knows exactly what you keep pushing.
 | --- | --- |
 | `1`–`5`, `Tab` | switch view |
 | `c` | capture — one line, no fields, from anywhere |
+| `/` | filter the board; the panel counts matches as you type, empty clears |
 | `j` `k` `h` `l` | move · `J` `K` reorder |
 | `space` | advance status — refuses to start an undefined task |
 | `e`, `Enter` | define / edit |
