@@ -1,56 +1,69 @@
-"""Domain model for the local board: statuses, categories, effort sizes.
+"""Domain rules.
 
-Mirrors the schema the old web app used, so the exported Supabase rows
-import without any field mapping.
+Two ideas drive the shape of this:
+
+1. Capture is free, committing is not. Anything can be written down in one
+   line. A task only has to be *defined* — area, outcome, next action, kind,
+   estimate — before you're allowed to start it.
+2. The tool should be able to tell you whether a day was real. That needs a
+   ship/support split on every task, an honest end-of-day line, and a record
+   of where the hours actually went.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 
 STATUSES = [("todo", "To Do"), ("doing", "Doing"), ("done", "Done")]
 STATUS_KEYS = [k for k, _ in STATUSES]
 STATUS_LABELS = dict(STATUSES)
 
-CATEGORIES = [("board", "Board"), ("longterm", "Long-term")]
-CATEGORY_KEYS = [k for k, _ in CATEGORIES]
+# Real work vs fake work. "Ship" means someone other than you could notice it
+# happened. "Support" is everything that only makes shipping easier later —
+# tooling, config, research, process. Support isn't bad; a week that is all
+# support is.
+KINDS = [("ship", "Ship"), ("support", "Support")]
+KIND_KEYS = [k for k, _ in KINDS]
+KIND_LABELS = dict(KINDS)
 
-EFFORTS = [
-    ("15m", "15m"),
-    ("30m", "30m"),
-    ("1h", "1h"),
-    ("2h", "2h"),
-    ("half_day", "Half day"),
-    ("day_plus", "Day+"),
+ESTIMATES = [
+    ("15m", "15m", 15),
+    ("30m", "30m", 30),
+    ("1h", "1h", 60),
+    ("2h", "2h", 120),
+    ("half_day", "Half day", 240),
+    ("day_plus", "Day+", 480),
 ]
-EFFORT_KEYS = [k for k, _ in EFFORTS]
-EFFORT_LABELS = dict(EFFORTS)
+ESTIMATE_KEYS = [k for k, _, _ in ESTIMATES]
+ESTIMATE_LABELS = {k: label for k, label, _ in ESTIMATES}
+ESTIMATE_MINUTES = {k: mins for k, _, mins in ESTIMATES}
 
-# Anything at or above half a day is too big to live on the day board:
-# it has to be split into smaller tasks or promoted to Long-term.
+# Bigger than half a day is not one task. It still gets captured, it just
+# shouldn't be dropped onto a single day pretending it will happen.
 OVERSIZED = {"half_day", "day_plus"}
+
+STALE_DAYS = 14          # untouched this long and it wants a decision
+NAGGING_ROLLS = 3        # rolled forward this often and it wants a decision
 
 GREETINGS = [
     "Hi KiaRez",
     "What's up?",
-    "You got this",
-    "Keep going",
+    "One thing at a time",
+    "Start small",
     "Focus time",
     "Let's go",
-    "One step at a time",
+    "Ship something",
     "Nice work",
 ]
 
 
 @dataclass
-class Goal:
+class Area:
+    """A permanent part of your life. Areas are never finished or achieved."""
     id: str
-    title: str
-    description: str | None = None
-    target_date: str | None = None
+    name: str
     position: int = 0
-    archived: bool = False
     created_at: str = ""
 
 
@@ -58,30 +71,70 @@ class Goal:
 class Task:
     id: str
     title: str
-    description: str | None = None
+    area_id: str | None = None
+    day: str | None = None            # None = inbox, not yet scheduled
     status: str = "todo"
-    category: str = "board"
-    due_date: str | None = None
-    due_time: str | None = None
+    kind: str | None = None           # ship | support
+    outcome: str | None = None        # definition of done
+    next_action: str | None = None
+    estimate: str | None = None
+    doing_seconds: int = 0
+    doing_since: str | None = None
+    rolls: int = 0                    # times auto-rolled to the next day
     position: int = 0
     created_at: str = ""
-    goal_id: str | None = None
-    outcome: str | None = None
-    effort: str | None = None
-    next_action: str | None = None
+    touched_at: str = ""
+    done_at: str | None = None
 
     @property
     def defined(self) -> bool:
-        """A task is only 'defined' once all four Tier 1 fields are filled in."""
-        return bool(self.goal_id and self.outcome and self.effort and self.next_action)
+        return bool(self.area_id and self.outcome and self.next_action
+                    and self.kind and self.estimate)
+
+    @property
+    def missing(self) -> list[str]:
+        return [name for name, val in (
+            ("area", self.area_id), ("outcome", self.outcome),
+            ("next action", self.next_action), ("kind", self.kind),
+            ("estimate", self.estimate)) if not val]
 
     @property
     def oversized(self) -> bool:
-        return is_oversized(self.effort)
+        return self.estimate in OVERSIZED
+
+    @property
+    def actual_minutes(self) -> int:
+        secs = self.doing_seconds
+        if self.doing_since:
+            secs += max(0, int((utc_now() - parse(self.doing_since))
+                               .total_seconds()))
+        return round(secs / 60)
+
+    @property
+    def estimate_minutes(self) -> int | None:
+        return ESTIMATE_MINUTES.get(self.estimate or "")
+
+    def stale_days(self) -> int:
+        if not self.touched_at:
+            return 0
+        return (utc_now() - parse(self.touched_at)).days
 
 
-def is_oversized(effort: str | None) -> bool:
-    return bool(effort) and effort in OVERSIZED
+@dataclass
+class Day:
+    """What you said shipped that day. 'nothing' is a legal, visible answer."""
+    date: str
+    shipped: str | None = None
+    logged_at: str | None = None
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse(stamp: str) -> datetime:
+    d = datetime.fromisoformat(stamp)
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
 def today() -> str:
@@ -92,30 +145,25 @@ def add_days(date_str: str, delta: int) -> str:
     return (date.fromisoformat(date_str) + timedelta(days=delta)).isoformat()
 
 
-def validate_task(
-    *, title: str, goal_id: str | None, outcome: str, effort: str | None,
-    next_action: str, category: str,
-) -> list[str]:
-    """Return the list of reasons this task is not acceptable, empty if fine.
+def fmt_minutes(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, mins = divmod(minutes, 60)
+    return f"{hours}h" if not mins else f"{hours}h{mins:02d}"
 
-    Same four required fields the web form enforced, plus the board/oversize rule.
+
+def can_start(task: Task) -> list[str]:
+    """Why this task may not be started yet. Empty list means go ahead.
+
+    This is the only friction in the system, and it sits at the moment of
+    commitment rather than the moment of capture.
     """
-    problems = []
-    if not title.strip():
-        problems.append("title is required")
-    if not goal_id:
-        problems.append("a goal is required")
-    if not outcome.strip():
-        problems.append("outcome (definition of done) is required")
-    if not effort:
-        problems.append("effort is required")
-    elif effort not in EFFORT_KEYS:
-        problems.append(f"effort must be one of: {', '.join(EFFORT_KEYS)}")
-    if not next_action.strip():
-        problems.append("next action is required")
-    if category == "board" and is_oversized(effort):
-        problems.append(
-            "half-day or bigger is too large for the day board — split it, "
-            "or file it under Long-term"
-        )
-    return problems
+    if task.defined:
+        return []
+    return [f"{m} is missing" for m in task.missing]
+
+
+def ship_ratio(tasks) -> tuple[int, int]:
+    """(shipped, total) over finished tasks — the real-vs-fake-work number."""
+    done = [t for t in tasks if t.status == "done"]
+    return sum(t.kind == "ship" for t in done), len(done)

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Focus tracker daemon — records how long watched apps hold focus.
+exec python3 -c "import sys, pathlib
+sys.path.insert(0, str(pathlib.Path('$0').resolve().parent.parent))
+from space.track import main; sys.exit(main(sys.argv[1:]))" "$@"

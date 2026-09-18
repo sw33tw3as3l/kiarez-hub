@@ -7,7 +7,7 @@ import sys
 import termios
 from dataclasses import dataclass
 
-from .model import EFFORTS, EFFORT_LABELS
+from .model import ESTIMATES, KINDS
 
 # Color pair ids. The palette echoes the old Material You ember theme:
 # ember for "doing"/accents, green for done, dim grey for idle.
@@ -54,8 +54,13 @@ def put(win, y: int, x: int, text: str, a: int = 0, width: int | None = None) ->
     room = (w - x - 1) if width is None else min(width, w - x - 1)
     if room <= 0:
         return
+    # addnstr's limit is counted in BYTES, but `room` is screen columns. With
+    # multibyte characters (·, ✓, ↑, the box-drawing lines) the byte count
+    # runs out first and clips the text early, so trim by column here and
+    # hand addnstr the resulting byte length.
+    text = text[:room]
     try:
-        win.addnstr(y, x, text, room, a)
+        win.addnstr(y, x, text, len(text.encode("utf-8")), a)
     except curses.error:
         pass
 
@@ -105,10 +110,16 @@ class Field:
         return self.value or ""
 
 
-def effort_field(value: str = "") -> Field:
-    return Field("effort", "Effort", "choice", required=True,
-                 choices=list(EFFORTS), value=value,
-                 hint="← → to pick; half-day or bigger can't go on the day board")
+def estimate_field(value: str = "") -> Field:
+    return Field("estimate", "Estimate", "choice", required=True,
+                 choices=[(k, label) for k, label, _ in ESTIMATES], value=value,
+                 hint="← → to pick — the tool compares this against actual time")
+
+
+def kind_field(value: str = "") -> Field:
+    return Field("kind", "Kind", "choice", required=True, choices=list(KINDS),
+                 value=value,
+                 hint="Ship = someone else could notice it · Support = only helps you ship later")
 
 
 class FormCancelled(Exception):
@@ -218,6 +229,48 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
         elif 32 <= ch < 127 and f.kind == "text":
             f.value += chr(ch)
             editing, cursor = True, len(f.value)
+
+
+def prompt(stdscr, label: str, value: str = "") -> str | None:
+    """One-line input on the bottom row. Returns None if cancelled.
+
+    This is the capture path: it has to be fast enough that writing something
+    down never feels like filling in a form.
+    """
+    curses.curs_set(1)
+    cursor = len(value)
+    try:
+        while True:
+            h, w = stdscr.getmaxyx()
+            put(stdscr, h - 1, 0, " " * (w - 1))
+            put(stdscr, h - 1, 2, label, attr(C_ACCENT, True))
+            x = 2 + len(label) + 1
+            put(stdscr, h - 1, x, value, attr(C_DIM))
+            stdscr.move(h - 1, min(x + cursor, w - 2))
+            stdscr.refresh()
+
+            ch = stdscr.getch()
+            if ch == 27:
+                return None
+            if ch in (curses.KEY_ENTER, 10, 13):
+                return value
+            if ch in (curses.KEY_BACKSPACE, 127, 8):
+                if cursor:
+                    value = value[:cursor - 1] + value[cursor:]
+                    cursor -= 1
+            elif ch == curses.KEY_LEFT:
+                cursor = max(0, cursor - 1)
+            elif ch == curses.KEY_RIGHT:
+                cursor = min(len(value), cursor + 1)
+            elif ch == curses.KEY_DC:
+                value = value[:cursor] + value[cursor + 1:]
+            elif ch == curses.KEY_RESIZE:
+                continue
+            elif 32 <= ch < 127:
+                value = value[:cursor] + chr(ch) + value[cursor:]
+                cursor += 1
+    finally:
+        curses.curs_set(0)
 
 
 def confirm(stdscr, question: str) -> bool:

@@ -1,0 +1,24 @@
+# Focus tracker as a user service. NOT installed by anything in this repo —
+# copy it yourself if you want it to start with your session:
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/space-track.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now space-track.service
+#
+# Check it:  systemctl --user status space-track
+# Stop it:   systemctl --user disable --now space-track
+
+[Unit]
+Description=kiarez space focus tracker
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/space-track
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

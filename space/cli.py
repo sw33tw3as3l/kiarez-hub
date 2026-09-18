@@ -1,12 +1,14 @@
 """Scriptable CLI over the same database the TUI uses.
 
-    space-cli today                 # today's board, grouped by status
-    space-cli ls --category longterm --status todo
-    space-cli add "Title" --goal-id ... --outcome ... --effort 1h --next "..."
-    space-cli done <id-prefix>
-    space-cli goals
-    space-cli stats
-    space-cli export > backup.json
+    space-cli c "something I thought of"     # capture, no fields
+    space-cli today
+    space-cli inbox
+    space-cli define 4f2a --area paycheck --outcome "..." --kind ship \
+                          --estimate 1h --next "..."
+    space-cli start 4f2a / done 4f2a
+    space-cli shipped "the grade endpoint is live"
+    space-cli focus            # where today's hours went
+    space-cli review           # stale work, estimate accuracy
 """
 
 from __future__ import annotations
@@ -17,14 +19,22 @@ import sys
 from dataclasses import asdict
 
 from . import db
-from .model import EFFORT_LABELS, STATUS_KEYS, STATUS_LABELS, today, validate_task
+from .model import (
+    ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
+    STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
+    ship_ratio, today,
+)
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
 
 
-def resolve(conn, prefix: str):
-    """Accept any unambiguous id prefix, the way git accepts short SHAs."""
-    rows = conn.execute("select id, title from tasks where id like ?",
+def plain():
+    globals().update(DIM="", ACC="", OK="", WARN="", OFF="")
+
+
+def resolve(conn, prefix: str) -> str:
+    """Any unambiguous id prefix, the way git takes short SHAs."""
+    rows = conn.execute("select id from tasks where id like ?",
                         (prefix + "%",)).fetchall()
     if not rows:
         sys.exit(f"no task matching '{prefix}'")
@@ -33,69 +43,115 @@ def resolve(conn, prefix: str):
     return rows[0]["id"]
 
 
-def show(t, titles, plain=False):
+def resolve_area(conn, text: str) -> str:
+    """Match an area by id prefix or by a unique piece of its name."""
+    rows = conn.execute(
+        "select id, name from areas where id like ? or lower(name) like ?",
+        (text + "%", f"%{text.lower()}%")).fetchall()
+    if not rows:
+        sys.exit(f"no area matching '{text}' — see `space-cli areas`")
+    if len(rows) > 1:
+        sys.exit("'%s' matches: %s" % (text, ", ".join(r["name"] for r in rows)))
+    return rows[0]["id"]
+
+
+def show(t, names):
     color = {"todo": DIM, "doing": ACC, "done": OK}[t.status]
-    if plain:
-        color = OFF
-    flag = "" if t.defined else f" {WARN}[undefined]{OFF}"
-    meta = " · ".join(filter(None, [
-        EFFORT_LABELS.get(t.effort or ""),
-        titles.get(t.goal_id or ""),
-        (t.due_time or "")[:5],
-    ]))
-    print(f"{color}{t.id[:8]}  {t.title}{OFF}{flag}")
-    if meta:
-        print(f"          {DIM}{meta}{OFF}")
+    print(f"{color}{t.id[:8]}  {t.title}{OFF}")
+    if not t.defined:
+        print(f"          {WARN}needs {', '.join(t.missing)}{OFF}")
+        return
+    bits = [KIND_LABELS[t.kind], ESTIMATE_LABELS[t.estimate],
+            names.get(t.area_id, "—")]
+    if t.actual_minutes:
+        bits.append(f"actual {fmt_minutes(t.actual_minutes)}")
+    if t.rolls:
+        bits.append(f"rolled {t.rolls}×")
+    print(f"          {DIM}{' · '.join(bits)}{OFF}")
     if t.outcome:
         print(f"          {DIM}done when: {t.outcome}{OFF}")
 
 
-def cmd_ls(conn, a):
-    titles = db.goal_titles(conn)
-    items = db.tasks(conn, category=a.category, status=a.status,
-                     due_date=a.date, goal_id=a.goal_id)
-    if a.json:
-        print(json.dumps([asdict(t) for t in items], indent=2))
-        return
-    for t in items:
-        show(t, titles, a.plain)
-    if not items:
-        print(f"{DIM}nothing here{OFF}")
+def cmd_capture(conn, a):
+    print(db.capture(conn, " ".join(a.text))[:8])
 
 
 def cmd_today(conn, a):
-    titles = db.goal_titles(conn)
     day = a.date or today()
-    print(f"{ACC}{day}{OFF}")
+    db.roll_forward(conn)
+    items = db.tasks(conn, day=day)
+    names = db.area_names(conn)
+    shipped, done = ship_ratio(items)
+    mins = db.usage_total(conn, day) // 60
+    log = db.day_log(conn, day)
+
+    print(f"{ACC}{day}{OFF}   ship {shipped}/{done}   "
+          f"distraction {fmt_minutes(mins)}")
+    print(f"{DIM}shipped: {log.shipped or 'not logged'}{OFF}")
     for s in STATUS_KEYS:
-        items = [t for t in db.tasks(conn, category="board", due_date=day)
-                 if t.status == s]
-        print(f"\n{STATUS_LABELS[s]} ({len(items)})")
-        for t in items:
-            show(t, titles, a.plain)
+        group = [t for t in items if t.status == s]
+        print(f"\n{STATUS_LABELS[s]} ({len(group)})")
+        for t in group:
+            show(t, names)
 
 
-def cmd_add(conn, a):
-    problems = validate_task(
-        title=a.title, goal_id=a.goal_id, outcome=a.outcome or "",
-        effort=a.effort, next_action=a.next_action or "",
-        category=a.category)
-    if problems:
-        for p in problems:
-            print(f"{WARN}✗ {p}{OFF}", file=sys.stderr)
-        sys.exit(1)
-    tid = db.add_task(
-        conn, title=a.title, goal_id=a.goal_id, outcome=a.outcome,
-        effort=a.effort, next_action=a.next_action, category=a.category,
-        due_date=a.date or (None if a.category == "longterm" else today()),
-        due_time=a.time, description=a.description or "")
-    print(tid[:8])
+def cmd_inbox(conn, a):
+    names = db.area_names(conn)
+    items = db.tasks(conn, inbox=True)
+    for t in items:
+        show(t, names)
+    if not items:
+        print(f"{DIM}inbox empty{OFF}")
+
+
+def cmd_ls(conn, a):
+    items = db.tasks(conn, day=a.date if a.date else "__any__",
+                     status=a.status,
+                     area_id=resolve_area(conn, a.area) if a.area else None)
+    if a.json:
+        print(json.dumps([asdict(t) for t in items], indent=2))
+        return
+    names = db.area_names(conn)
+    for t in items:
+        show(t, names)
+
+
+def cmd_define(conn, a):
+    tid = resolve(conn, a.id)
+    fields = {}
+    if a.area:
+        fields["area_id"] = resolve_area(conn, a.area)
+    for key, val in (("outcome", a.outcome), ("next_action", a.next_action),
+                     ("kind", a.kind), ("estimate", a.estimate),
+                     ("title", a.title)):
+        if val:
+            fields[key] = val
+    db.update_task(conn, tid, **fields)
+    t = db.task(conn, tid)
+    print(f"{tid[:8]} {'defined' if t.defined else 'still needs ' + ', '.join(t.missing)}")
 
 
 def cmd_status(conn, a):
     tid = resolve(conn, a.id)
+    t = db.task(conn, tid)
+    if a.status == "doing":
+        blockers = can_start(t)
+        if blockers:
+            sys.exit(f"{WARN}can't start: {', '.join(blockers)}{OFF}\n"
+                     f"run: space-cli define {tid[:8]} ...")
     db.set_status(conn, tid, a.status)
     print(f"{tid[:8]} → {STATUS_LABELS[a.status]}")
+
+
+def cmd_schedule(conn, a):
+    tid = resolve(conn, a.id)
+    day = None if a.inbox else (a.date or today())
+    if day:
+        blockers = can_start(db.task(conn, tid))
+        if blockers:
+            sys.exit(f"{WARN}define it first: {', '.join(blockers)}{OFF}")
+    db.schedule(conn, tid, day)
+    print(f"{tid[:8]} → {day or 'inbox'}")
 
 
 def cmd_rm(conn, a):
@@ -104,112 +160,198 @@ def cmd_rm(conn, a):
     print(f"deleted {tid[:8]}")
 
 
-def cmd_goals(conn, a):
-    for g in db.goals(conn, include_archived=a.all):
-        items = db.tasks(conn, goal_id=g.id)
-        done = sum(t.status == "done" for t in items)
-        tail = f" · by {g.target_date}" if g.target_date else ""
-        print(f"{ACC}{g.id[:8]}{OFF}  {g.title}  {DIM}{done}/{len(items)} done{tail}{OFF}")
+def cmd_areas(conn, a):
+    for area in db.areas(conn):
+        items = db.tasks(conn, area_id=area.id)
+        shipped, finished = ship_ratio(items)
+        open_now = sum(t.status != "done" for t in items)
+        print(f"{ACC}{area.id[:8]}{OFF}  {area.name}  "
+              f"{DIM}{open_now} open · {shipped}/{finished} shipped{OFF}")
 
 
-def cmd_goal_add(conn, a):
-    print(db.add_goal(conn, a.title, a.description or "", a.date)[:8])
+def cmd_area_add(conn, a):
+    print(db.add_area(conn, " ".join(a.name))[:8])
+
+
+def cmd_shipped(conn, a):
+    day = a.date or today()
+    text = " ".join(a.text) if a.text else ""
+    if not text:
+        print(db.day_log(conn, day).shipped or "not logged")
+        return
+    db.log_shipped(conn, day, text)
+    print(f"logged for {day}: {text}")
+
+
+def cmd_focus(conn, a):
+    day = a.date or today()
+    rows = db.usage(conn, day)
+    if not rows:
+        print(f"{DIM}nothing recorded for {day} — is space-track running?{OFF}")
+        return
+    for app, label, secs in rows:
+        mins = secs // 60
+        bar = "█" * min(40, mins // 5)
+        print(f"{label:14} {fmt_minutes(mins):>7}  {WARN if mins >= 60 else DIM}{bar}{OFF}")
+    print(f"{DIM}total {fmt_minutes(db.usage_total(conn, day) // 60)}{OFF}")
+
+
+def cmd_watch(conn, a):
+    if a.remove:
+        db.set_watch(conn, a.remove, None)
+        print(f"stopped watching {a.remove}")
+    elif a.add:
+        db.set_watch(conn, a.add, a.label or a.add)
+        print(f"watching {a.add}")
+    for app, label in db.watchlist(conn):
+        print(f"{label:14} {DIM}{app}{OFF}")
+
+
+def cmd_review(conn, a):
+    print(f"{ACC}Distraction, last 7 days{OFF}")
+    totals = {}
+    for i in range(7):
+        for app, label, secs in db.usage(conn, add_days(today(), -i)):
+            totals[label] = totals.get(label, 0) + secs
+    for label, secs in sorted(totals.items(), key=lambda kv: -kv[1]):
+        print(f"  {label:14} {fmt_minutes(secs // 60)}")
+    if not totals:
+        print(f"  {DIM}nothing recorded{OFF}")
+
+    print(f"\n{ACC}Estimate vs actual{OFF}")
+    finished = [t for t in db.tasks(conn)
+                if t.status == "done" and t.estimate_minutes and t.doing_seconds]
+    if finished:
+        ratios = [t.actual_minutes / t.estimate_minutes for t in finished]
+        print(f"  {len(finished)} timed tasks · you take "
+              f"{sum(ratios) / len(ratios):.1f}× your estimate")
+    else:
+        print(f"  {DIM}no finished timed tasks yet{OFF}")
+
+    print(f"\n{ACC}Needs a decision{OFF}")
+    rotting = [(t, f"rolled {t.rolls}×" if t.rolls >= NAGGING_ROLLS
+                else f"untouched {t.stale_days()}d")
+               for t in db.tasks(conn)
+               if t.status != "done" and (t.rolls >= NAGGING_ROLLS
+                                          or t.stale_days() >= STALE_DAYS)]
+    for t, why in rotting:
+        print(f"  {t.id[:8]}  {t.title[:50]:52} {WARN}{why}{OFF}")
+    if not rotting:
+        print(f"  {OK}nothing rotting{OFF}")
 
 
 def cmd_stats(conn, a):
     row = conn.execute("""
-        select count(*) total,
-               sum(status = 'done') done,
-               sum(status = 'doing') doing,
-               sum(goal_id is null or outcome is null
-                   or effort is null or next_action is null) undefined
+        select count(*) total, coalesce(sum(status='done'),0) done,
+               coalesce(sum(status='doing'),0) doing,
+               coalesce(sum(day is null and status!='done'),0) inbox,
+               coalesce(sum(kind='ship' and status='done'),0) shipped
           from tasks""").fetchone()
-    print(f"tasks     {row['total']}")
-    print(f"done      {row['done']}")
-    print(f"doing     {row['doing']}")
-    print(f"undefined {row['undefined']}")
-    print(f"goals     {len(db.goals(conn))}")
-    print(f"db        {db.db_path()}")
+    print(f"tasks   {row['total']}")
+    print(f"done    {row['done']} ({row['shipped']} shipped)")
+    print(f"doing   {row['doing']}")
+    print(f"inbox   {row['inbox']}")
+    print(f"areas   {len(db.areas(conn))}")
+    print(f"db      {db.db_path()}")
 
 
 def cmd_export(conn, a):
-    json.dump(
-        {"goals": [asdict(g) for g in db.goals(conn, include_archived=True)],
-         "tasks": [asdict(t) for t in db.tasks(conn)]},
-        sys.stdout, indent=2)
+    json.dump({"areas": [asdict(x) for x in db.areas(conn)],
+               "tasks": [asdict(t) for t in db.tasks(conn)],
+               "days": {d: s for d, s in db.logged_days(conn).items()}},
+              sys.stdout, indent=2)
     print()
 
 
 def build_parser():
-    # Shared flags live on a parent parser so they work on either side of the
-    # subcommand: `space-cli --plain today` and `space-cli today --plain`.
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--plain", action="store_true", help="no ANSI color")
-
+    # SUPPRESS matters: without it a subparser that didn't see --plain writes
+    # its own False over the value the top-level parser already set, so
+    # `space-cli --plain today` would silently keep the color.
+    common.add_argument("--plain", action="store_true",
+                        default=argparse.SUPPRESS, help="no ANSI color")
     p = argparse.ArgumentParser(prog="space-cli", description=__doc__,
                                 parents=[common],
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     _sub = p.add_subparsers(dest="cmd", required=True)
 
-    class sub:                      # every subparser inherits the common flags
-        @staticmethod
-        def add_parser(name, **kw):
-            return _sub.add_parser(name, parents=[common], **kw)
+    def add(name, **kw):
+        return _sub.add_parser(name, parents=[common], **kw)
 
-    t = sub.add_parser("today", help="the day board")
-    t.add_argument("--date")
-    t.set_defaults(fn=cmd_today)
+    for name in ("capture", "c"):
+        s = add(name, help="write something down — title only")
+        s.add_argument("text", nargs="+")
+        s.set_defaults(fn=cmd_capture)
 
-    ls = sub.add_parser("ls", help="list tasks")
-    ls.add_argument("--category", choices=["board", "longterm"])
-    ls.add_argument("--status", choices=STATUS_KEYS)
-    ls.add_argument("--date")
-    ls.add_argument("--goal-id")
-    ls.add_argument("--json", action="store_true")
-    ls.set_defaults(fn=cmd_ls)
+    s = add("today", help="the day board")
+    s.add_argument("--date")
+    s.set_defaults(fn=cmd_today)
 
-    a = sub.add_parser("add", help="add a task (all four fields required)")
-    a.add_argument("title")
-    a.add_argument("--goal-id", required=True)
-    a.add_argument("--outcome", required=True)
-    a.add_argument("--effort", required=True)
-    a.add_argument("--next", dest="next_action", required=True)
-    a.add_argument("--category", default="board", choices=["board", "longterm"])
-    a.add_argument("--date")
-    a.add_argument("--time")
-    a.add_argument("--description")
-    a.set_defaults(fn=cmd_add)
+    add("inbox", help="captured, not yet scheduled").set_defaults(fn=cmd_inbox)
 
-    for name, status in (("done", "done"), ("doing", "doing"), ("todo", "todo")):
-        s = sub.add_parser(name, help=f"mark a task {status}")
+    s = add("ls", help="list tasks")
+    s.add_argument("--date")
+    s.add_argument("--status", choices=STATUS_KEYS)
+    s.add_argument("--area")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_ls)
+
+    s = add("define", help="fill in what a task needs before it can start")
+    s.add_argument("id")
+    s.add_argument("--title")
+    s.add_argument("--area")
+    s.add_argument("--outcome")
+    s.add_argument("--next", dest="next_action")
+    s.add_argument("--kind", choices=KIND_KEYS)
+    s.add_argument("--estimate", choices=ESTIMATE_KEYS)
+    s.set_defaults(fn=cmd_define)
+
+    for name, status in (("start", "doing"), ("done", "done"), ("stop", "todo")):
+        s = add(name, help=f"mark a task {status}")
         s.add_argument("id")
         s.set_defaults(fn=cmd_status, status=status)
 
-    r = sub.add_parser("rm", help="delete a task")
-    r.add_argument("id")
-    r.set_defaults(fn=cmd_rm)
+    s = add("schedule", help="put a task on a day, or back in the inbox")
+    s.add_argument("id")
+    s.add_argument("--date")
+    s.add_argument("--inbox", action="store_true")
+    s.set_defaults(fn=cmd_schedule)
 
-    g = sub.add_parser("goals", help="list goals")
-    g.add_argument("--all", action="store_true", help="include archived")
-    g.set_defaults(fn=cmd_goals)
+    s = add("rm", help="delete a task")
+    s.add_argument("id")
+    s.set_defaults(fn=cmd_rm)
 
-    ga = sub.add_parser("goal-add", help="add a goal")
-    ga.add_argument("title")
-    ga.add_argument("--description")
-    ga.add_argument("--date")
-    ga.set_defaults(fn=cmd_goal_add)
+    add("areas", help="list areas").set_defaults(fn=cmd_areas)
+    s = add("area-add", help="add an area")
+    s.add_argument("name", nargs="+")
+    s.set_defaults(fn=cmd_area_add)
 
-    sub.add_parser("stats", help="counts").set_defaults(fn=cmd_stats)
-    sub.add_parser("export", help="dump everything as JSON").set_defaults(fn=cmd_export)
+    s = add("shipped", help="log (or read) what shipped on a day")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--date")
+    s.set_defaults(fn=cmd_shipped)
+
+    s = add("focus", help="where the day's hours went")
+    s.add_argument("--date")
+    s.set_defaults(fn=cmd_focus)
+
+    s = add("watch", help="manage the distraction watchlist")
+    s.add_argument("--add", metavar="APP_CLASS")
+    s.add_argument("--label")
+    s.add_argument("--remove", metavar="APP_CLASS")
+    s.set_defaults(fn=cmd_watch)
+
+    add("review", help="stale work, estimate accuracy, distraction").set_defaults(fn=cmd_review)
+    add("stats", help="counts").set_defaults(fn=cmd_stats)
+    add("export", help="dump everything as JSON").set_defaults(fn=cmd_export)
     return p
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if getattr(args, "plain", False):
-        globals().update(DIM="", ACC="", OK="", WARN="", OFF="")
-    conn = db.connect()
-    args.fn(conn, args)
+        plain()
+    args.fn(db.connect(), args)
     return 0
 
 

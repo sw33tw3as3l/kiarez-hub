@@ -1,81 +1,117 @@
 # kiarez space
 
-A task board that runs in your terminal. Four views — day board, calendar,
-long-term, goals — over a single SQLite file. Python standard library only:
-nothing to install, no server, no browser, no network.
+A task board in your terminal, built around one question: **was today real?**
 
-Replaces the previous Next.js + Supabase web version; the old code is still
-in this repository's git history.
-
-## Run it
+Python standard library only — `curses`, `sqlite3`. Nothing to install, no
+server, no browser, no network.
 
 ```bash
-./bin/space
+space           # the board
+space-track     # focus tracker (run once, in the background)
+space-cli       # scripting
 ```
 
-Put it on your PATH once:
+## The model
 
-```bash
-./scripts/install.sh
-```
+**Areas** are permanent — PayCheck, Health, Learning, Personal. They are never
+finished, have no target date, and show no progress bar. A task lives in one.
 
-Then `space` opens the board and `space-cli` scripts against it.
+**Capture is free. Committing is not.** Press `c` anywhere and type one line;
+it lands in the Inbox with no fields to fill. A task only has to be *defined*
+before you can start it:
+
+| Field | Why |
+| --- | --- |
+| area | where it belongs |
+| outcome | how you'll know it's done |
+| next action | the first physical step |
+| kind | **Ship** or **Support** |
+| estimate | checked against what it actually took |
+
+Trying to start an undefined task refuses and says what's missing. Friction
+sits at the moment of commitment, not the moment of capture.
+
+**Ship vs Support** is the real-work test. Ship means someone other than you
+could notice it happened. Support is tooling, config, research, process —
+work that only makes shipping easier later. Support isn't bad; a week that is
+all support is.
+
+**Days roll forward.** Anything unfinished moves to today automatically and
+its roll count goes up. Nothing is lost, and nothing quietly rots on an old
+date — but the Review view knows exactly what you keep pushing.
+
+## The five views
+
+1. **Today** — three columns, plus the strip that judges the day: ship ratio,
+   distraction minutes, and what you said shipped.
+2. **Calendar** — the month. `✓` = you logged something that shipped, `·` =
+   you logged nothing. Both are honest answers; a blank day is neither.
+3. **Inbox** — captured, not yet on a day. `s` schedules, `e` defines.
+4. **Areas** — open and shipped counts per area.
+5. **Review** — what the board would rather you didn't see: where the last
+   seven days went, how far off your estimates are, and every task that has
+   been untouched for two weeks or rolled forward three times.
 
 ## Keys
 
 | Key | Does |
 | --- | --- |
-| `1`–`4`, `Tab` | Board / Calendar / Long-term / Goals |
-| `j` `k` | move down / up |
-| `h` `l` | move between To Do / Doing / Done |
-| `J` `K` | reorder a task inside its column |
-| `space` | advance status (todo → doing → done) |
-| `n` / `g` | new task / new goal |
-| `e`, `Enter` | edit |
-| `x` | delete (asks first) |
-| `[` `]` | previous / next day |
-| `t` | jump to today |
-| `?` | help |
-| `q` | quit |
+| `1`–`5`, `Tab` | switch view |
+| `c` | capture — one line, no fields, from anywhere |
+| `j` `k` `h` `l` | move · `J` `K` reorder |
+| `space` | advance status — refuses to start an undefined task |
+| `e`, `Enter` | define / edit |
+| `s` `S` | schedule onto the open day / send back to inbox |
+| `w` | log what shipped today |
+| `a` | new area · `x` delete |
+| `[` `]` `t` | previous day / next day / today |
+| `?` `q` | help / quit |
 
 In a form: type to edit, `←`/`→` change a choice, `Enter` next field,
 `Ctrl-S` or `F2` save, `Esc` cancel.
 
-## The rules it enforces
+## Focus tracking
 
-A task is not accepted until it has all four:
-
-- a **goal** it belongs to
-- an **outcome** — the definition of done
-- an **effort** size
-- a **next action** — the first physical step
-
-Anything half a day or bigger is refused on the day board; it belongs in
-Long-term, split into smaller pieces. This is the same rule the web version
-enforced, moved into `space/model.py` where both the TUI and the CLI use it.
-
-## Scripting it
+`space-track` listens to Hyprland's event socket and records how long watched
+apps hold the keyboard. No polling, no extra packages, no screenshots — just
+seconds per app per day.
 
 ```bash
-space-cli today                  # the day board
-space-cli ls --status doing      # filter by status, category, date, goal
-space-cli ls --json              # machine-readable
-space-cli done 4f2a              # any unambiguous id prefix, like git
-space-cli goals
-space-cli stats
-space-cli export > backup.json
+space-cli watch                              # what's watched
+space-cli watch --add org.telegram.desktop --label Telegram
+space-cli focus                              # where today went
+hyprctl clients -j | grep class              # find an app's class
 ```
 
-`--plain` drops the ANSI color, for piping.
+Telegram and Chrome are watched by default. Time is only recorded for apps on
+the watchlist, and a window focused for more than 15 minutes without a switch
+stops counting — that's you walking away, not you working.
+
+To start it with your session, see `scripts/space-track.service` (nothing in
+this repo installs it for you).
+
+## Scripting
+
+```bash
+space-cli c "something I thought of"      # capture
+space-cli today
+space-cli inbox
+space-cli define 4f2a --area paycheck --outcome "..." \
+                      --kind ship --estimate 1h --next "..."
+space-cli start 4f2a          # refuses if undefined
+space-cli done 4f2a
+space-cli shipped "the grade endpoint is live"
+space-cli focus
+space-cli review
+space-cli ls --json
+```
+
+Task ids take any unambiguous prefix, like git. `--plain` drops the color.
 
 ## Data
 
 `~/.kiarez-space/data.db`, or wherever `KIAREZ_SPACE_DB` points.
 
 ```bash
-./scripts/backup.sh              # timestamped JSON + db copy, keeps the last 20
+./scripts/backup.sh     # timestamped JSON + db copy, keeps the last 20
 ```
-
-`scripts/import-export.py` loads a `supabase-export.json` into the local
-database. It already ran once for the migration — 18 goals and 195 tasks —
-and is idempotent if you ever need it again.
