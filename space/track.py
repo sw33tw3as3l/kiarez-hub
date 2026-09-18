@@ -55,7 +55,7 @@ class Tracker:
 
     def __init__(self, conn):
         self.conn = conn
-        self.watched = dict(db.watchlist(conn))
+        self.watched = {app: label for app, label, _ in db.watchlist(conn)}
         self.current = active_class()
         self.title = ""
         self.since = time.monotonic()
@@ -97,7 +97,8 @@ class Tracker:
                 db.add_usage_hour(self.conn, day, hour, app, round(secs))
         self.pending.clear()
         self.last_flush = time.monotonic()
-        self.watched = dict(db.watchlist(self.conn))     # pick up edits
+        self.watched = {app: label for app, label, _ in
+                        db.watchlist(self.conn)}   # pick up edits
 
     def focus(self, app: str, title: str = "") -> None:
         same_app = app == self.current
@@ -147,11 +148,11 @@ def main(argv=None) -> int:
 
     if "--once" in argv:
         app = active_class()
-        watched = dict(db.watchlist(conn))
+        watched = {a for a, _, _ in db.watchlist(conn)}
         print(f"focused: {app}  {'(watched)' if app in watched else '(not watched)'}")
         print(f"socket:  {socket_path()}")
-        for a, label in db.watchlist(conn):
-            print(f"watching {label:12} {a}")
+        for a, label, color in db.watchlist(conn):
+            print(f"watching {label:12} {color:7} {a}")
         return 0
 
     tracker = Tracker(conn)

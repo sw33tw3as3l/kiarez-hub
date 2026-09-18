@@ -92,6 +92,11 @@ In a form: type to edit, `←`/`→` change a choice, `Enter` next field,
 `space-track` listens to Hyprland's event socket and records four numbers per
 watched app per day. No polling, no extra packages, no screenshots.
 
+Four apps are tracked out of the box, each with a colour: **Telegram (red)**,
+Chrome (yellow), Claude (green), Terminal (green). Red means time spent
+against you — it's what the day strip counts as distraction. Everything else
+is simply time accounted for.
+
 | Number | Means |
 | --- | --- |
 | focused | how long it held the keyboard |
@@ -106,7 +111,8 @@ session are the same number of minutes and nothing like the same day.
 space-cli focus                              # every watched app today
 space-cli focus --app telegram               # the full picture, by hour
 space-cli focus --app telegram --days 30
-space-cli watch --add org.telegram.desktop --label Telegram
+space-cli watch                              # the list and its colours
+space-cli watch --add code --label Editor --color green
 hyprctl clients -j | grep class              # find an app's class
 ```
 

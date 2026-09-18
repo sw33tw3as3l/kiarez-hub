@@ -13,7 +13,9 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 - `space/cli.py` — scriptable commands.
 - `space/track.py` — Hyprland focus tracker. Banks seconds, checks (focus
   gained), interactions (title changes while focused) and the longest stretch,
-  plus an hourly breakdown, into `app_usage` / `app_usage_hours`.
+  plus an hourly breakdown, into `app_usage` / `app_usage_hours`. Each watched
+  app carries a colour; `red` is the one with meaning — `usage_total(color=
+  "red")` is what the day strip calls distraction.
 
 Rules that matter:
 - **Capture is free, starting is not.** Anything can be created with a title

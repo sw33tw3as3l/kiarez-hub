@@ -80,16 +80,22 @@ create table if not exists app_usage_hours (
   primary key (date, hour, app)
 );
 
--- Apps worth counting against you.
+-- Apps whose focused time is recorded. `color` is how the app is shown and
+-- what it means: red is time spent against you and is what the day strip
+-- calls distraction; everything else is simply time accounted for.
 create table if not exists watchlist (
   app   text primary key,
-  label text not null
+  label text not null,
+  color text not null default 'dim'
+           check (color in ('red', 'yellow', 'green', 'cyan', 'dim'))
 );
 """
 
 DEFAULT_WATCHLIST = [
-    ("org.telegram.desktop", "Telegram"),
-    ("google-chrome", "Chrome"),
+    ("org.telegram.desktop", "Telegram", "red"),
+    ("google-chrome", "Chrome", "yellow"),
+    ("com.anthropic.Claude", "Claude", "green"),
+    ("kitty", "Terminal", "green"),
 ]
 
 
@@ -108,10 +114,10 @@ def connect(path=None) -> sqlite3.Connection:
     _guard_old_schema(conn, p)
     conn.executescript(SCHEMA)
     _add_missing_columns(conn)
-    if not conn.execute("select count(*) from watchlist").fetchone()[0]:
-        conn.executemany("insert into watchlist (app, label) values (?,?)",
-                         DEFAULT_WATCHLIST)
-        conn.commit()
+    conn.executemany(
+        "insert or ignore into watchlist (app, label, color) values (?,?,?)",
+        DEFAULT_WATCHLIST)
+    conn.commit()
     return conn
 
 
@@ -126,6 +132,16 @@ def _add_missing_columns(conn) -> None:
         if col not in have:
             conn.execute(f"alter table app_usage add column {col} "
                          f"integer not null default 0")
+    watch = {r["name"] for r in conn.execute("pragma table_info(watchlist)")}
+    if watch and "color" not in watch:
+        conn.execute("alter table watchlist add column color text "
+                     "not null default 'dim'")
+        # Backfill the apps we ship defaults for. A row that already existed
+        # takes the default colour the new column gives it otherwise, which
+        # would quietly leave Telegram looking like neutral time.
+        for app, _, color in DEFAULT_WATCHLIST:
+            conn.execute("update watchlist set color = ? where app = ?",
+                         (color, app))
     conn.commit()
 
 
@@ -226,22 +242,32 @@ def counts_by_day(conn, days: list[str]) -> dict[str, tuple[int, int]]:
 def usage(conn, date_str: str) -> list[tuple[str, str, int]]:
     """[(app, label, seconds)] for watched apps on a day, worst first."""
     rows = conn.execute(
-        """select u.app, coalesce(w.label, u.app) label, u.seconds
+        """select u.app, coalesce(w.label, u.app) label,
+                  coalesce(w.color, 'dim') color, u.seconds
              from app_usage u left join watchlist w on w.app = u.app
             where u.date = ? and u.seconds > 0 order by u.seconds desc""",
         (date_str,))
-    return [(r["app"], r["label"], r["seconds"]) for r in rows]
+    return [(r["app"], r["label"], r["color"], r["seconds"]) for r in rows]
 
 
-def usage_total(conn, date_str: str) -> int:
-    row = conn.execute("select coalesce(sum(seconds), 0) s from app_usage "
-                       "where date = ?", (date_str,)).fetchone()
+def usage_total(conn, date_str: str, color: str | None = None) -> int:
+    """Seconds recorded on a day — all of it, or only apps of one color."""
+    if color is None:
+        row = conn.execute("select coalesce(sum(seconds), 0) s from app_usage "
+                           "where date = ?", (date_str,)).fetchone()
+    else:
+        row = conn.execute(
+            """select coalesce(sum(u.seconds), 0) s from app_usage u
+                 join watchlist w on w.app = u.app
+                where u.date = ? and w.color = ?""",
+            (date_str, color)).fetchone()
     return row["s"]
 
 
-def watchlist(conn) -> list[tuple[str, str]]:
-    return [(r["app"], r["label"]) for r in
-            conn.execute("select app, label from watchlist order by label")]
+def watchlist(conn) -> list[tuple[str, str, str]]:
+    return [(r["app"], r["label"], r["color"]) for r in
+            conn.execute("select app, label, color from watchlist "
+                         "order by color = 'red' desc, label")]
 
 
 # --- writes -----------------------------------------------------------------
@@ -429,13 +455,15 @@ def usage_range(conn, app: str, days: list[str]) -> dict:
     return dict(row)
 
 
-def set_watch(conn, app: str, label: str | None) -> None:
+def set_watch(conn, app: str, label: str | None, color: str = "dim") -> None:
     if label is None:
         conn.execute("delete from watchlist where app = ?", (app,))
     else:
-        conn.execute("""insert into watchlist (app, label) values (?,?)
-                        on conflict(app) do update set label = excluded.label""",
-                     (app, label))
+        conn.execute(
+            """insert into watchlist (app, label, color) values (?,?,?)
+               on conflict(app) do update set label = excluded.label,
+                                              color = excluded.color""",
+            (app, label, color))
     conn.commit()
 
 

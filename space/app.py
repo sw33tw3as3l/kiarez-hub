@@ -24,6 +24,11 @@ VIEWS = [("today", "Today"), ("calendar", "Calendar"), ("inbox", "Inbox"),
 
 STATUS_COLOR = {"todo": C_DIM, "doing": C_DOING, "done": C_DONE}
 
+# Watchlist colours, as chosen per app. Red is time spent against you and is
+# what the day strip counts as distraction; the rest is time merely accounted for.
+APP_COLOR = {"red": C_WARN, "yellow": C_DOING, "green": C_DONE,
+             "cyan": C_HEAD, "dim": C_DIM}
+
 HELP = [
     ("1-5 / Tab", "switch view"),
     ("c", "capture — one line, no fields, from any view"),
@@ -149,7 +154,8 @@ class App:
         """The line that says whether this day was real."""
         items = db.tasks(self.conn, day=self.day)
         shipped, done = ship_ratio(items)
-        distraction = db.usage_total(self.conn, self.day) // 60
+        distraction = db.usage_total(self.conn, self.day, color="red") // 60
+        tracked = db.usage_total(self.conn, self.day) // 60
         log = db.day_log(self.conn, self.day)
 
         d = date.fromisoformat(self.day)
@@ -158,7 +164,8 @@ class App:
 
         bits = [(f"ship {shipped}/{done}", C_DONE if shipped else C_DIM),
                 (f"distraction {fmt_minutes(distraction)}",
-                 C_WARN if distraction >= 60 else C_DIM)]
+                 C_WARN if distraction else C_DIM),
+                (f"tracked {fmt_minutes(tracked)}", C_DIM)]
         x = 34
         for text, color in bits:
             put(self.stdscr, y, x, text, attr(color))
@@ -377,24 +384,28 @@ class App:
         y = top
 
         # 1. Where the last seven days actually went.
-        put(self.stdscr, y, 2, "Distraction, last 7 days", attr(C_ACCENT, True))
+        put(self.stdscr, y, 2, "Where the last 7 days went", attr(C_ACCENT, True))
         y += 1
         span = [add_days(today(), -i) for i in range(7)]
         totals = {}
         for day in span:
-            for app, label, secs in db.usage(self.conn, day):
-                totals[label] = (app, totals.get(label, (app, 0))[1] + secs)
+            for app, label, color, secs in db.usage(self.conn, day):
+                prev = totals.get(label, (app, color, 0))[2]
+                totals[label] = (app, color, prev + secs)
         if totals:
-            for label, (app, secs) in sorted(totals.items(),
-                                             key=lambda kv: -kv[1][1])[:4]:
+            # Bars are relative to the biggest row — a fixed scale just pins
+            # everything to the cap and stops being a comparison.
+            peak = max(v[2] for v in totals.values()) or 1
+            for label, (app, color, secs) in sorted(totals.items(),
+                                                    key=lambda kv: -kv[1][2])[:5]:
                 mins = secs // 60
                 agg = db.usage_range(self.conn, app, span)
-                bar = "█" * min(24, mins // 10)
+                bar = "█" * max(1, round(24 * secs / peak))
                 line = (f"{label:12} {fmt_minutes(mins):>7}  {bar:<24}  "
                         f"{agg['opens']} checks · {agg['opens'] // 7}/day · "
                         f"longest {fmt_minutes(agg['longest'] // 60)}")
                 put(self.stdscr, y, 4, line,
-                    attr(C_WARN if mins >= 7 * 60 else C_DIM))
+                    attr(APP_COLOR.get(color, C_DIM), color == "red"))
                 y += 1
         else:
             put(self.stdscr, y, 4, "nothing recorded — is space-track running?",

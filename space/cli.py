@@ -29,6 +29,14 @@ from .model import (
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
 
+# Per-app colours, as chosen on the watchlist.
+APP_COLORS = {"red": "\033[31m", "yellow": "\033[33m", "green": "\033[32m",
+              "cyan": "\033[36m", "dim": "\033[2m"}
+
+
+def app_color(name: str) -> str:
+    return "" if not OFF else APP_COLORS.get(name, DIM)
+
 
 def plain():
     globals().update(DIM="", ACC="", OK="", WARN="", OFF="")
@@ -214,7 +222,7 @@ def cmd_shipped(conn, a):
 def resolve_app(conn, text: str) -> tuple[str, str]:
     """Match a watched app by class or label, e.g. 'telegram'."""
     needle = text.lower()
-    for app, label in db.watchlist(conn):
+    for app, label, _ in db.watchlist(conn):
         if needle in app.lower() or needle in label.lower():
             return app, label
     sys.exit(f"'{text}' is not watched — see `space-cli watch`")
@@ -229,14 +237,19 @@ def cmd_focus(conn, a):
     if not rows:
         print(f"{DIM}nothing recorded for {day} — is space-track running?{OFF}")
         return
-    for app, label, secs in rows:
+    peak = max(r[3] for r in rows) or 1
+    for app, label, color, secs in rows:
         d = db.usage_detail(conn, app, day)
         mins = secs // 60
-        bar = "█" * min(30, mins // 5)
+        bar = "█" * max(1, round(30 * secs / peak))
         extra = f"{d['opens']} checks · longest {fmt_minutes(d['longest'] // 60)}"
-        print(f"{label:14} {fmt_minutes(mins):>7}  "
-              f"{WARN if mins >= 60 else DIM}{bar:<30}{OFF} {DIM}{extra}{OFF}")
-    print(f"{DIM}total {fmt_minutes(db.usage_total(conn, day) // 60)}{OFF}")
+        tint = app_color(color)
+        print(f"{tint}{label:14} {fmt_minutes(mins):>7}  {bar:<30}{OFF} "
+              f"{DIM}{extra}{OFF}")
+    total = db.usage_total(conn, day)
+    red = db.usage_total(conn, day, color="red")
+    print(f"{DIM}tracked {fmt_minutes(total // 60)}{OFF}"
+          f"   {WARN}red {fmt_minutes(red // 60)}{OFF}")
 
 
 def focus_detail(conn, app_label, day, days):
@@ -283,20 +296,21 @@ def cmd_watch(conn, a):
         db.set_watch(conn, a.remove, None)
         print(f"stopped watching {a.remove}")
     elif a.add:
-        db.set_watch(conn, a.add, a.label or a.add)
+        db.set_watch(conn, a.add, a.label or a.add, a.color)
         print(f"watching {a.add}")
-    for app, label in db.watchlist(conn):
-        print(f"{label:14} {DIM}{app}{OFF}")
+    for app, label, color in db.watchlist(conn):
+        print(f"{app_color(color)}{label:14}{OFF} {DIM}{color:7} {app}{OFF}")
 
 
 def cmd_review(conn, a):
-    print(f"{ACC}Distraction, last 7 days{OFF}")
+    print(f"{ACC}Where the last 7 days went{OFF}")
     totals = {}
     for i in range(7):
-        for app, label, secs in db.usage(conn, add_days(today(), -i)):
-            totals[label] = totals.get(label, 0) + secs
-    for label, secs in sorted(totals.items(), key=lambda kv: -kv[1]):
-        print(f"  {label:14} {fmt_minutes(secs // 60)}")
+        for app, label, color, secs in db.usage(conn, add_days(today(), -i)):
+            prev = totals.get(label, (color, 0))[1]
+            totals[label] = (color, prev + secs)
+    for label, (color, secs) in sorted(totals.items(), key=lambda kv: -kv[1][1]):
+        print(f"  {app_color(color)}{label:14} {fmt_minutes(secs // 60)}{OFF}")
     if not totals:
         print(f"  {DIM}nothing recorded{OFF}")
 
@@ -437,6 +451,9 @@ def build_parser():
     s = add("watch", help="manage the distraction watchlist")
     s.add_argument("--add", metavar="APP_CLASS")
     s.add_argument("--label")
+    s.add_argument("--color", default="dim",
+                   choices=["red", "yellow", "green", "cyan", "dim"],
+                   help="red marks time spent against you")
     s.add_argument("--remove", metavar="APP_CLASS")
     s.set_defaults(fn=cmd_watch)
 
