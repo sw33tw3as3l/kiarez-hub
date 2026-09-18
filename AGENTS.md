@@ -72,8 +72,14 @@ Gotchas already paid for:
   main loop starts spinning.
 - `App.alive()` decides whether the main loop animates or blocks. Keep it
   cheap and keep it honest: an idle board must block.
-- **Run `scripts/smoke.py`, `scripts/edges.py` and `scripts/sizes.py` before
-  committing.** sizes.py walks every view from 200x40 down to 24x8 — curses is
+- **Never hang periodic work off events you happen to care about.** The
+  tracker flushed on `activewindow` or on a socket timeout, so a compositor
+  busy emitting events it ignores meant `recv` never timed out and banking
+  stopped dead — for an hour, in production, with the process looking healthy.
+  `Tracker.tick()` now runs on the loop itself. `scripts/track-test.py` holds
+  the regression: a fake compositor that emits nothing but noise.
+- **Run `scripts/smoke.py`, `scripts/edges.py`, `scripts/sizes.py` and
+  `scripts/track-test.py` before committing.** sizes.py walks every view from 200x40 down to 24x8 — curses is
   unforgiving about writes past the edge and a wide development window hides
   all of it. Header, chips and the key hints are all width-degrading: chips
   shed their labels before their numbers, because losing the shortcut keys off

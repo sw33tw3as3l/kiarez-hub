@@ -202,8 +202,22 @@ class Tracker:
             elif title and clean_title(title) != self.title:
                 self.slot(app)["switches"] += 1       # you moved around inside it
         self.current, self.title = app, clean_title(title)
-        if time.monotonic() - self.last_flush >= FLUSH_EVERY:
-            self.flush()
+
+    def tick(self) -> None:
+        """Bank and write if enough time has passed. Called from the loop.
+
+        This has to live on the loop rather than on a focus change: the
+        compositor emits plenty of events that are none of our business, and
+        while they keep arriving `recv` never times out. Hanging the flush off
+        events we happen to care about means a busy stream of events we don't
+        stops the clock entirely — which is exactly what it did, silently, for
+        an hour at a time.
+        """
+        if time.monotonic() - self.last_flush < FLUSH_EVERY:
+            return
+        self.poll_session()
+        self.bank()
+        self.flush()
 
     def run(self) -> None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -215,9 +229,7 @@ class Tracker:
                 try:
                     chunk = sock.recv(8192)
                 except socket.timeout:
-                    self.poll_session()  # did the screen lock while we waited?
-                    self.bank()          # keep the running total honest
-                    self.flush()
+                    self.tick()          # quiet stream: bank on the timeout
                     continue
                 if not chunk:
                     break                # compositor went away
@@ -230,6 +242,7 @@ class Tracker:
                         self.focus(app, title)
                     elif event in ("closewindow", "focusedmon"):
                         self.focus(active_class())
+                self.tick()              # busy stream: bank on the loop
         finally:
             self.bank()
             self.flush()

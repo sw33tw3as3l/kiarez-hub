@@ -224,6 +224,7 @@ Task ids take any unambiguous prefix, like git. `--plain` drops the color.
 python3 scripts/smoke.py     # the UI, in a real pseudo-terminal
 python3 scripts/edges.py     # the data layer, in about a second
 python3 scripts/sizes.py     # every view from 200x40 down to 24x8
+python3 scripts/track-test.py  # the tracker, against a fake compositor
 ```
 
 The smoke test walks every view, form and prompt with effects on and off,
