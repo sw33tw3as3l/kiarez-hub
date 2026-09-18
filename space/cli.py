@@ -233,8 +233,12 @@ def cmd_node_rm(conn, a):
 
 
 def cmd_day(conn, a):
-    """Read or write the day's two answers. Use `space-review` to be asked."""
-    day = valid_date(a.date) if a.date else today()
+    """Read or write the day's two answers. Use `space-review` to be asked.
+
+    With no --date this means the day still open for answering, which before
+    04:00 is yesterday — the same day the board and the reminder mean.
+    """
+    day = valid_date(a.date) if a.date else review_day()
     log = db.day_log(conn, day)
     if (a.did or a.missed) and day != review_day():
         # The lock is the whole point of the daily question; the CLI must not

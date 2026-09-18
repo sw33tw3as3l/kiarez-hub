@@ -766,12 +766,11 @@ class App:
         """The day's two questions. Only the open day is writable — a day locks at
         midnight, because a journal you can backfill records what you wish had
         happened rather than what did."""
+        # The question always belongs to the open day, whatever day the board
+        # happens to be showing. Telling someone that tomorrow "is closed"
+        # because they were looking at it is nonsense.
         day = review_day()
-        if self.day != day:
-            self.message_at = time.monotonic()
-            self.message = (f"{self.day} is closed — {day} is the day still "
-                            f"open for answering")
-            return
+        looking_elsewhere = self.day != day
         log = db.day_log(self.conn, day)
         answers = {}
         for key, question, _hint in questions_for(day):
@@ -796,7 +795,7 @@ class App:
             answers[key] = got
         db.log_day(self.conn, day, answers["did"] or "nothing", answers["missed"])
         self.message_at = time.monotonic()
-        self.message = "logged"
+        self.message = f"logged for {day}" if looking_elsewhere else "logged"
 
     def advance(self, t):
         nxt = STATUS_KEYS[(STATUS_KEYS.index(t.status) + 1) % 3]
