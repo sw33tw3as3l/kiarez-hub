@@ -211,17 +211,71 @@ def cmd_shipped(conn, a):
     print(f"logged for {day}: {text}")
 
 
+def resolve_app(conn, text: str) -> tuple[str, str]:
+    """Match a watched app by class or label, e.g. 'telegram'."""
+    needle = text.lower()
+    for app, label in db.watchlist(conn):
+        if needle in app.lower() or needle in label.lower():
+            return app, label
+    sys.exit(f"'{text}' is not watched — see `space-cli watch`")
+
+
 def cmd_focus(conn, a):
     day = a.date or today()
+    if a.app:
+        return focus_detail(conn, resolve_app(conn, a.app), day, a.days)
+
     rows = db.usage(conn, day)
     if not rows:
         print(f"{DIM}nothing recorded for {day} — is space-track running?{OFF}")
         return
     for app, label, secs in rows:
+        d = db.usage_detail(conn, app, day)
         mins = secs // 60
-        bar = "█" * min(40, mins // 5)
-        print(f"{label:14} {fmt_minutes(mins):>7}  {WARN if mins >= 60 else DIM}{bar}{OFF}")
+        bar = "█" * min(30, mins // 5)
+        extra = f"{d['opens']} checks · longest {fmt_minutes(d['longest'] // 60)}"
+        print(f"{label:14} {fmt_minutes(mins):>7}  "
+              f"{WARN if mins >= 60 else DIM}{bar:<30}{OFF} {DIM}{extra}{OFF}")
     print(f"{DIM}total {fmt_minutes(db.usage_total(conn, day) // 60)}{OFF}")
+
+
+def focus_detail(conn, app_label, day, days):
+    """Everything known about one app: the interaction picture, not just time."""
+    app, label = app_label
+    d = db.usage_detail(conn, app, day)
+    span = [add_days(day, -i) for i in range(days)]
+    total = db.usage_range(conn, app, span)
+
+    print(f"{ACC}{label} — {day}{OFF}")
+    if not d["seconds"]:
+        print(f"  {DIM}nothing recorded{OFF}")
+    else:
+        mins = d["seconds"] // 60
+        print(f"  focused      {fmt_minutes(mins)}")
+        print(f"  checks       {d['opens']}"
+              f"{DIM}  (separate times you went to it){OFF}")
+        print(f"  longest      {fmt_minutes(d['longest'] // 60)}"
+              f"{DIM}  (single unbroken stretch){OFF}")
+        print(f"  interactions {d['switches']}"
+              f"{DIM}  (moves between chats/views inside it){OFF}")
+        if d["opens"]:
+            print(f"  per check    {fmt_minutes(mins // max(1, d['opens']))}")
+
+    if d["hours"]:
+        print(f"\n{ACC}By hour{OFF}")
+        peak = max(d["hours"].values()) or 1
+        for hour in sorted(d["hours"]):
+            secs = d["hours"][hour]
+            bar = "█" * max(1, round(30 * secs / peak))
+            print(f"  {hour:02d}:00  {fmt_minutes(secs // 60):>6}  "
+                  f"{WARN if secs >= 1800 else DIM}{bar}{OFF}")
+
+    print(f"\n{ACC}Last {days} days{OFF}")
+    print(f"  focused      {fmt_minutes(total['seconds'] // 60)}"
+          f"{DIM}  ({fmt_minutes(total['seconds'] // 60 // days)}/day){OFF}")
+    print(f"  checks       {total['opens']}"
+          f"{DIM}  ({total['opens'] // days}/day){OFF}")
+    print(f"  longest      {fmt_minutes(total['longest'] // 60)}")
 
 
 def cmd_watch(conn, a):
@@ -375,6 +429,9 @@ def build_parser():
 
     s = add("focus", help="where the day's hours went")
     s.add_argument("--date")
+    s.add_argument("--app", help="drill into one watched app, e.g. telegram")
+    s.add_argument("--days", type=int, default=7,
+                   help="span for the totals shown with --app")
     s.set_defaults(fn=cmd_focus)
 
     s = add("watch", help="manage the distraction watchlist")

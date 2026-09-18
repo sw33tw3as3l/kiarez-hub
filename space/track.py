@@ -43,45 +43,77 @@ def active_class() -> str:
 
 
 class Tracker:
+    """Turns focus events into four numbers per app per day.
+
+    seconds  — how long it held the keyboard
+    opens    — how many separate times you went to it ("checks")
+    switches — title changes while it stayed focused; in a chat app that is
+               you hopping between conversations, which is interaction rather
+               than the window merely sitting there
+    longest  — the longest unbroken stretch
+    """
+
     def __init__(self, conn):
         self.conn = conn
         self.watched = dict(db.watchlist(conn))
         self.current = active_class()
+        self.title = ""
         self.since = time.monotonic()
-        self.pending: dict[tuple[str, str], float] = {}
+        self.pending: dict[tuple[str, str], dict] = {}
         self.last_flush = time.monotonic()
+        if self.current in self.watched:
+            # Starting up with it already focused is itself a check.
+            self.slot(self.current)["opens"] += 1
+
+    def slot(self, app: str) -> dict:
+        key = (date.today().isoformat(), app)
+        if key not in self.pending:
+            self.pending[key] = {"seconds": 0.0, "opens": 0, "switches": 0,
+                                 "longest": 0.0, "hours": {}}
+        return self.pending[key]
 
     def bank(self) -> None:
         """Credit the time the outgoing window held focus."""
         elapsed = time.monotonic() - self.since
         self.since = time.monotonic()
-        if self.current not in self.watched:
+        if self.current not in self.watched or elapsed < 1:
             return
         if elapsed > IDLE_AFTER:
             # Focused but untouched for a quarter of an hour: almost certainly
             # you walked away. Count the threshold, not the whole gap.
             elapsed = IDLE_AFTER
-        if elapsed >= 1:
-            key = (date.today().isoformat(), self.current)
-            self.pending[key] = self.pending.get(key, 0) + elapsed
+        slot = self.slot(self.current)
+        slot["seconds"] += elapsed
+        slot["longest"] = max(slot["longest"], elapsed)
+        hour = time.localtime().tm_hour
+        slot["hours"][hour] = slot["hours"].get(hour, 0) + elapsed
 
     def flush(self) -> None:
-        for (day, app), secs in self.pending.items():
-            db.add_usage(self.conn, day, app, round(secs))
+        for (day, app), v in self.pending.items():
+            db.add_usage(self.conn, day, app, round(v["seconds"]),
+                         opens=v["opens"], switches=v["switches"],
+                         stretch=round(v["longest"]))
+            for hour, secs in v["hours"].items():
+                db.add_usage_hour(self.conn, day, hour, app, round(secs))
         self.pending.clear()
         self.last_flush = time.monotonic()
         self.watched = dict(db.watchlist(self.conn))     # pick up edits
 
-    def focus(self, app: str) -> None:
+    def focus(self, app: str, title: str = "") -> None:
+        same_app = app == self.current
         self.bank()
-        self.current = app
+        if app in self.watched:
+            if not same_app:
+                self.slot(app)["opens"] += 1          # you went to it again
+            elif title and title != self.title:
+                self.slot(app)["switches"] += 1       # you moved around inside it
+        self.current, self.title = app, title
         if time.monotonic() - self.last_flush >= FLUSH_EVERY:
             self.flush()
 
     def run(self) -> None:
-        path = socket_path()
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(path)
+        sock.connect(socket_path())
         sock.settimeout(FLUSH_EVERY)
         buf = b""
         try:
@@ -99,7 +131,8 @@ class Tracker:
                     line, buf = buf.split(b"\n", 1)
                     event, _, payload = line.decode(errors="replace").partition(">>")
                     if event == "activewindow":
-                        self.focus(payload.split(",", 1)[0])
+                        app, _, title = payload.partition(",")
+                        self.focus(app, title)
                     elif event in ("closewindow", "focusedmon"):
                         self.focus(active_class())
         finally:

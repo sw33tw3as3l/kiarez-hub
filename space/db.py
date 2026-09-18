@@ -57,12 +57,27 @@ create table if not exists days (
   logged_at text
 );
 
--- Focused seconds per app per day, written by the tracker.
+-- Focused time per app per day, written by the tracker.
+--   opens    how many separate times the app took focus — "checks"
+--   switches title changes while it stayed focused — chat-hopping inside it
+--   longest  the longest single unbroken stretch, in seconds
 create table if not exists app_usage (
+  date     text not null,
+  app      text not null,
+  seconds  integer not null default 0,
+  opens    integer not null default 0,
+  switches integer not null default 0,
+  longest  integer not null default 0,
+  primary key (date, app)
+);
+
+-- The same seconds, bucketed by hour, so you can see when it happens.
+create table if not exists app_usage_hours (
   date    text not null,
+  hour    integer not null,
   app     text not null,
   seconds integer not null default 0,
-  primary key (date, app)
+  primary key (date, hour, app)
 );
 
 -- Apps worth counting against you.
@@ -92,11 +107,26 @@ def connect(path=None) -> sqlite3.Connection:
     conn.execute("pragma journal_mode = wal")     # tracker writes concurrently
     _guard_old_schema(conn, p)
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     if not conn.execute("select count(*) from watchlist").fetchone()[0]:
         conn.executemany("insert into watchlist (app, label) values (?,?)",
                          DEFAULT_WATCHLIST)
         conn.commit()
     return conn
+
+
+def _add_missing_columns(conn) -> None:
+    """Widen app_usage in place — SQLite has no `add column if not exists`."""
+    row = conn.execute("select name from sqlite_master where type='table' "
+                       "and name='app_usage'").fetchone()
+    if not row:
+        return
+    have = {r["name"] for r in conn.execute("pragma table_info(app_usage)")}
+    for col in ("opens", "switches", "longest"):
+        if col not in have:
+            conn.execute(f"alter table app_usage add column {col} "
+                         f"integer not null default 0")
+    conn.commit()
 
 
 def _guard_old_schema(conn, path: Path) -> None:
@@ -198,7 +228,8 @@ def usage(conn, date_str: str) -> list[tuple[str, str, int]]:
     rows = conn.execute(
         """select u.app, coalesce(w.label, u.app) label, u.seconds
              from app_usage u left join watchlist w on w.app = u.app
-            where u.date = ? order by u.seconds desc""", (date_str,))
+            where u.date = ? and u.seconds > 0 order by u.seconds desc""",
+        (date_str,))
     return [(r["app"], r["label"], r["seconds"]) for r in rows]
 
 
@@ -340,12 +371,62 @@ def log_shipped(conn, date_str: str, text: str) -> None:
     conn.commit()
 
 
-def add_usage(conn, date_str: str, app: str, seconds: int) -> None:
-    conn.execute("""insert into app_usage (date, app, seconds) values (?,?,?)
-                    on conflict(date, app) do update
-                      set seconds = seconds + excluded.seconds""",
-                 (date_str, app, int(seconds)))
+def add_usage(conn, date_str: str, app: str, seconds: int, *, opens: int = 0,
+              switches: int = 0, stretch: int = 0, hour: int | None = None) -> None:
+    conn.execute(
+        """insert into app_usage (date, app, seconds, opens, switches, longest)
+           values (?,?,?,?,?,?)
+           on conflict(date, app) do update set
+             seconds  = seconds  + excluded.seconds,
+             opens    = opens    + excluded.opens,
+             switches = switches + excluded.switches,
+             longest  = max(longest, excluded.longest)""",
+        (date_str, app, int(seconds), int(opens), int(switches), int(stretch)))
+    if hour is not None and seconds:
+        conn.execute(
+            """insert into app_usage_hours (date, hour, app, seconds)
+               values (?,?,?,?)
+               on conflict(date, hour, app) do update
+                 set seconds = seconds + excluded.seconds""",
+            (date_str, int(hour), app, int(seconds)))
     conn.commit()
+
+
+def add_usage_hour(conn, date_str: str, hour: int, app: str, seconds: int) -> None:
+    conn.execute(
+        """insert into app_usage_hours (date, hour, app, seconds) values (?,?,?,?)
+           on conflict(date, hour, app) do update
+             set seconds = seconds + excluded.seconds""",
+        (date_str, int(hour), app, int(seconds)))
+    conn.commit()
+
+
+def usage_detail(conn, app: str, date_str: str) -> dict:
+    """Everything known about one app on one day."""
+    row = conn.execute(
+        "select seconds, opens, switches, longest from app_usage "
+        "where date = ? and app = ?", (date_str, app)).fetchone()
+    hours = {r["hour"]: r["seconds"] for r in conn.execute(
+        "select hour, seconds from app_usage_hours where date = ? and app = ?",
+        (date_str, app))}
+    base = dict(row) if row else {"seconds": 0, "opens": 0, "switches": 0,
+                                  "longest": 0}
+    base["hours"] = hours
+    return base
+
+
+def usage_range(conn, app: str, days: list[str]) -> dict:
+    """Totals for one app across several days."""
+    if not days:
+        return {"seconds": 0, "opens": 0, "switches": 0, "longest": 0}
+    marks = ",".join("?" * len(days))
+    row = conn.execute(
+        f"""select coalesce(sum(seconds),0) seconds, coalesce(sum(opens),0) opens,
+                   coalesce(sum(switches),0) switches,
+                   coalesce(max(longest),0) longest
+              from app_usage where app = ? and date in ({marks})""",
+        [app, *days]).fetchone()
+    return dict(row)
 
 
 def set_watch(conn, app: str, label: str | None) -> None:

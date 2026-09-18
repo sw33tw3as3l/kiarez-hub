@@ -379,15 +379,21 @@ class App:
         # 1. Where the last seven days actually went.
         put(self.stdscr, y, 2, "Distraction, last 7 days", attr(C_ACCENT, True))
         y += 1
+        span = [add_days(today(), -i) for i in range(7)]
         totals = {}
-        for i in range(7):
-            for app, label, secs in db.usage(self.conn, add_days(today(), -i)):
-                totals[label] = totals.get(label, 0) + secs
+        for day in span:
+            for app, label, secs in db.usage(self.conn, day):
+                totals[label] = (app, totals.get(label, (app, 0))[1] + secs)
         if totals:
-            for label, secs in sorted(totals.items(), key=lambda kv: -kv[1])[:4]:
+            for label, (app, secs) in sorted(totals.items(),
+                                             key=lambda kv: -kv[1][1])[:4]:
                 mins = secs // 60
-                bar = "█" * min(40, mins // 10)
-                put(self.stdscr, y, 4, f"{label:12} {fmt_minutes(mins):>7}  {bar}",
+                agg = db.usage_range(self.conn, app, span)
+                bar = "█" * min(24, mins // 10)
+                line = (f"{label:12} {fmt_minutes(mins):>7}  {bar:<24}  "
+                        f"{agg['opens']} checks · {agg['opens'] // 7}/day · "
+                        f"longest {fmt_minutes(agg['longest'] // 60)}")
+                put(self.stdscr, y, 4, line,
                     attr(C_WARN if mins >= 7 * 60 else C_DIM))
                 y += 1
         else:

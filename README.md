@@ -89,23 +89,42 @@ In a form: type to edit, `←`/`→` change a choice, `Enter` next field,
 
 ## Focus tracking
 
-`space-track` listens to Hyprland's event socket and records how long watched
-apps hold the keyboard. No polling, no extra packages, no screenshots — just
-seconds per app per day.
+`space-track` listens to Hyprland's event socket and records four numbers per
+watched app per day. No polling, no extra packages, no screenshots.
+
+| Number | Means |
+| --- | --- |
+| focused | how long it held the keyboard |
+| checks | how many separate times you went to it |
+| longest | the longest unbroken stretch |
+| interactions | title changes while it stayed focused — in a chat app, moving between conversations |
+
+Time alone undercounts the damage: forty 3-minute checks and one 2-hour
+session are the same number of minutes and nothing like the same day.
 
 ```bash
-space-cli watch                              # what's watched
+space-cli focus                              # every watched app today
+space-cli focus --app telegram               # the full picture, by hour
+space-cli focus --app telegram --days 30
 space-cli watch --add org.telegram.desktop --label Telegram
-space-cli focus                              # where today went
 hyprctl clients -j | grep class              # find an app's class
+```
+
+```
+Telegram — 2026-09-18
+  focused      1h30
+  checks       24    (separate times you went to it)
+  longest      22m   (single unbroken stretch)
+  interactions 40    (moves between chats/views inside it)
+  per check    3m
 ```
 
 Telegram and Chrome are watched by default. Time is only recorded for apps on
 the watchlist, and a window focused for more than 15 minutes without a switch
 stops counting — that's you walking away, not you working.
 
-To start it with your session, see `scripts/space-track.service` (nothing in
-this repo installs it for you).
+It starts with your Hyprland session via `~/.config/hypr/custom/execs.lua`.
+`scripts/space-track.service` is there if you'd rather systemd supervise it.
 
 ## Scripting
 
