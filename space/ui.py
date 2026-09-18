@@ -210,6 +210,12 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
         keys = ("↑↓ move · ←→ choose · enter edit · ctrl-s save · esc cancel"
                 if not editing else "typing — enter confirms · esc stops")
         put(stdscr, top + height - 2, label_x, keys, attr(C_DIM))
+
+        missing = [fld.label.lower() for fld in fields
+                   if fld.required and not str(fld.value).strip()]
+        note = ("still missing: " + ", ".join(missing)) if missing else "ready to save"
+        put(stdscr, top + height - 2, left + width - len(note) - 3, note,
+            attr(C_WARN if missing else C_DONE))
         stdscr.refresh()
 
         f = fields[idx]          # the selected field — never the loop's last
@@ -222,8 +228,8 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
                 editing = False
                 continue
             # A stray escape sequence shouldn't silently bin a filled-in form.
-            if any(f.value for f in fields) and not confirm(
-                    stdscr, "discard this form?"):
+            if any(fld.value for fld in fields) and not confirm(
+                    stdscr, "discard this form?", timeout=90):
                 continue
             stdscr.timeout(-1)
             return None
@@ -270,7 +276,15 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             if f.kind == "text":
                 editing, cursor = True, len(f.value)
             else:
+                if not f.value and f.choices:
+                    f.value = f.choices[0][0]
                 idx = min(idx + 1, len(fields) - 1)
+        elif 32 <= ch < 127 and f.kind == "choice" and f.choices:
+            letter = chr(ch).lower()
+            match = next((v for v, text in f.choices
+                          if text.lower().startswith(letter)), None)
+            if match:
+                f.value = match
         elif 32 <= ch < 127 and f.kind == "text":
             f.value += chr(ch)
             editing, cursor = True, len(f.value)
@@ -343,8 +357,12 @@ def prompt(stdscr, label: str, value: str = "", react=None) -> str | None:
         curses.curs_set(0)
 
 
-def confirm(stdscr, question: str) -> bool:
-    """A red-framed panel. Destructive things should look destructive."""
+def confirm(stdscr, question: str, timeout: int = -1) -> bool:
+    """A red-framed panel. Destructive things should look destructive.
+
+    `timeout` is what to restore when the answer comes in — animated callers
+    pass the cadence they were running at.
+    """
     h, w = stdscr.getmaxyx()
     width = min(w - 6, max(40, len(question) + 10))
     left, top = max(2, (w - width) // 2), max(1, h // 2 - 2)
@@ -354,4 +372,16 @@ def confirm(stdscr, question: str) -> bool:
     put(stdscr, top + 3, left + 3, "y to confirm · anything else cancels",
         attr(C_DIM))
     stdscr.refresh()
-    return stdscr.getch() in (ord("y"), ord("Y"))
+
+    # Wait for a real key. Callers that animate leave an input timeout set,
+    # and inheriting it here means getch() returns -1 within a tenth of a
+    # second and the question answers itself "no" before you can reach the
+    # keyboard.
+    stdscr.timeout(-1)
+    try:
+        while True:
+            ch = stdscr.getch()
+            if ch not in (-1, curses.KEY_RESIZE):
+                return ch in (ord("y"), ord("Y"))
+    finally:
+        stdscr.timeout(timeout)

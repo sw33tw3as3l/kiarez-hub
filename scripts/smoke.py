@@ -135,6 +135,29 @@ def check_outcomes(failures: list) -> None:
                and rows.get("Child") is not None and rows.get("Root") is None,
                f"nodes={rows}")
 
+        # Deleting must actually delete — the confirm panel used to answer
+        # itself "no" because it inherited the caller's input timeout.
+        db = f"{tmp}/outcome-delete.db"
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Gone"],
+                       capture_output=True,
+                       env=dict(os.environ, KIAREZ_SPACE_DB=db))
+        conn = board(db, "4jx" + "y")
+        left = conn.execute("select count(*) c from nodes").fetchone()["c"]
+        expect("x then y deletes a node", left == 0, f"{left} node(s) left")
+
+        # Enter on an untouched choice field must settle on a real value.
+        db = f"{tmp}/outcome-enter.db"
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True,
+                       env=dict(os.environ, KIAREZ_SPACE_DB=db))
+        keys = ("n" + "Entered task" + "\r\r" + "done" + "\r\r\r"
+                + "go" + "\r" + "\x13")
+        conn = board(db, keys)
+        row = conn.execute("select * from tasks").fetchone()
+        expect("enter settles choice fields", row is not None
+               and row["kind"] and row["estimate"],
+               f"row={dict(row) if row else None}")
+
         # Advancing a task must move its status.
         db = f"{tmp}/outcome-status.db"
         env = dict(os.environ, KIAREZ_SPACE_DB=db)
