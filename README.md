@@ -219,12 +219,14 @@ Task ids take any unambiguous prefix, like git. `--plain` drops the color.
 ## Checking it still works
 
 ```bash
-python3 scripts/smoke.py
+python3 scripts/smoke.py     # the UI, in a real pseudo-terminal
+python3 scripts/edges.py     # the data layer, in about a second
 ```
 
-Drives the real board in a pseudo-terminal through every view, form and
-prompt — effects on and off — plus every CLI command, and fails on any
-traceback. Takes about a minute.
+The smoke test walks every view, form and prompt with effects on and off,
+runs every CLI command, and then — the part that matters — does things and
+asks the database whether they happened. A form can go completely dead
+without raising anything.
 
 ## Data
 

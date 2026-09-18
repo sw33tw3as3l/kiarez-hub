@@ -66,9 +66,14 @@ Gotchas already paid for:
   main loop starts spinning.
 - `App.alive()` decides whether the main loop animates or blocks. Keep it
   cheap and keep it honest: an idle board must block.
-- **Run `python3 scripts/smoke.py` before committing any UI change.** Importing
-  a module proves nothing about a curses app — a missing method only blows up
-  on the frame that calls it. The smoke test drives the real TUI in a pty
-  through every view and panel, with effects on and off, and fails on any
-  traceback. It was written after a regex tidy-up silently deleted a method
-  that `import space.app` was perfectly happy about.
+- **Run `python3 scripts/smoke.py` and `python3 scripts/edges.py` before
+  committing.** Neither an import nor a clean traceback check proves anything:
+  a missing method only blows up on the frame that calls it, and a completely
+  dead form raises nothing at all. smoke.py drives the real TUI in a pty
+  through every view and panel with effects on and off, *and* asserts outcomes
+  against the database (a task added through the form arrives complete, x-then-y
+  really deletes, both daily answers are stored). edges.py covers the data layer
+  in a second, no terminal needed.
+- **A widget that waits for an answer must own the input timeout.** `confirm()`
+  inherited its caller's and answered itself "no" within 90ms. Anything that
+  blocks for a keypress sets `timeout(-1)` and restores the caller's cadence.

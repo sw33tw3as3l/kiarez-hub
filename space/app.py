@@ -154,6 +154,21 @@ class App:
         self.draw_footer(h, w)
         self.stdscr.refresh()
 
+    def badges(self) -> dict[str, int]:
+        """What each view would tell you if you went there."""
+        out = {}
+        inbox = len(self.inbox())
+        if inbox:
+            out["inbox"] = inbox
+        rotting = len(self.stale())
+        if rotting:
+            out["review"] = rotting
+        undefined = sum(1 for t in db.tasks(self.conn, day=self.day)
+                        if not t.defined)
+        if undefined:
+            out["today"] = undefined
+        return out
+
     def draw_header(self, w):
         put(self.stdscr, 0, 1, "◤", attr(C_NEON, True))
         put(self.stdscr, 0, 3, "KIAREZ", attr(C_NEON, True))
@@ -162,14 +177,22 @@ class App:
         put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
         put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
+        badges = self.badges()
         x = w - 4
         for i, (key, label) in enumerate(reversed(VIEWS)):
             n = len(VIEWS) - i
-            chip = f" {n} {label} "
+            count = badges.get(key)
+            # The leading digit is the shortcut key; the badge needs to not
+            # read as a second one, hence the separator.
+            chip = f" {n} {label} " + (f"·{count} " if count else "")
             x -= len(chip) + 1
             on = key == self.view
             put(self.stdscr, 0, x, chip,
                 attr(C_SEL_ALT, True) if on else attr(C_DIM))
+            if count and not on:
+                # The number is the point; keep it lit even when the chip isn't.
+                put(self.stdscr, 0, x + len(chip) - len(str(count)) - 2,
+                    f"·{count}", attr(C_NEON, True))
 
         # The rule burns under the live view and fades away from it. On a
         # view change it tears for a couple of frames, then settles.

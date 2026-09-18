@@ -314,10 +314,15 @@ def prompt(stdscr, label: str, value: str = "", react=None) -> str | None:
                   C_NEON if value else C_FRAME,
                   C_NEON if value else C_ACCENT)
 
+            # Scroll a window that keeps the cursor inside it, rather than
+            # always showing the tail — otherwise editing the middle of a long
+            # line puts the caret somewhere the text isn't.
             inner = width - 6
-            shown = value[-inner:] if len(value) > inner else value
+            start = 0 if len(value) <= inner else max(0, min(cursor - inner + 1,
+                                                            len(value) - inner))
+            shown = value[start:start + inner]
             put(stdscr, top + 2, left + 3, shown.ljust(inner), attr(C_GHOST))
-            put(stdscr, top + 2, left + 3 + min(cursor, inner),
+            put(stdscr, top + 2, left + 3 + (cursor - start),
                 fx.caret(pulse.phase), attr(C_NEON, True))
 
             note, tone = (react(value) if react else (None, C_DIM))
