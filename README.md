@@ -5,6 +5,12 @@ A task board in your terminal, built around one question: **was today real?**
 Python standard library only — `curses`, `sqlite3`. Nothing to install, no
 server, no browser, no network.
 
+Neon on a dark ground: hot magenta and electric cyan carry the chrome, mint
+is success, amber is work in progress, red is what it costs you. In a
+terminal that allows it (kitty does) the exact hex values are written into
+colour slots rather than approximated. Effects are short and skippable —
+`SPACE_NO_FX=1` turns every animation off.
+
 ```bash
 space           # the board
 space-track     # focus tracker (run once, in the background)
@@ -84,8 +90,16 @@ date — but the Review view knows exactly what you keep pushing.
 | `[` `]` `t` | previous day / next day / today |
 | `?` `q` | help / quit |
 
-In a form: type to edit, `←`/`→` change a choice, `Enter` next field,
-`Ctrl-S` or `F2` save, `Esc` cancel.
+In a form: type to edit, `←`/`→` change a choice — every option is on screen
+as a chip, so nothing is arrowed through blind — `Enter` next field, `Ctrl-S`
+or `F2` save, `Esc` cancel (which asks first if you've typed anything).
+
+Things move when there's a reason to: the title resolves out of noise on
+launch, the caret breathes, prompts answer back as you type, finishing
+something sends a wave of light across the footer — magenta for a ship, mint
+for support — and the distraction figure pulses once it passes an hour. An
+idle board blocks on input and costs nothing; it only animates while
+something on screen is actually moving.
 
 ## Focus tracking
 

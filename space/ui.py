@@ -7,11 +7,13 @@ import sys
 import termios
 from dataclasses import dataclass
 
+from . import fx
 from .model import ESTIMATES, KINDS
-
-# Color pair ids. The palette echoes the old Material You ember theme:
-# ember for "doing"/accents, green for done, dim grey for idle.
-C_DIM, C_ACCENT, C_DONE, C_DOING, C_SEL, C_WARN, C_HEAD = range(1, 8)
+from .theme import (                                        # noqa: F401
+    C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
+    C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN,
+)
+from .theme import init as init_theme
 
 
 def disable_flow_control() -> None:
@@ -30,15 +32,7 @@ def disable_flow_control() -> None:
 
 
 def init_colors() -> None:
-    curses.start_color()
-    curses.use_default_colors()
-    curses.init_pair(C_DIM, curses.COLOR_WHITE, -1)
-    curses.init_pair(C_ACCENT, curses.COLOR_YELLOW, -1)
-    curses.init_pair(C_DONE, curses.COLOR_GREEN, -1)
-    curses.init_pair(C_DOING, curses.COLOR_YELLOW, -1)
-    curses.init_pair(C_SEL, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-    curses.init_pair(C_WARN, curses.COLOR_RED, -1)
-    curses.init_pair(C_HEAD, curses.COLOR_CYAN, -1)
+    init_theme()
 
 
 def attr(pair: int, bold: bool = False) -> int:
@@ -63,6 +57,25 @@ def put(win, y: int, x: int, text: str, a: int = 0, width: int | None = None) ->
         win.addnstr(y, x, text, len(text.encode("utf-8")), a)
     except curses.error:
         pass
+
+
+def frame(win, top: int, left: int, height: int, width: int,
+          title: str = "", color: int = C_FRAME, accent: int = C_NEON) -> None:
+    """A neon box. Corners are cut, because square corners look like a form."""
+    a = attr(color)
+    put(win, top, left, "╭" + "─" * (width - 2) + "╮", a)
+    for y in range(top + 1, top + height - 1):
+        put(win, y, left, "│", a)
+        put(win, y, left + width - 1, "│", a)
+    put(win, top + height - 1, left, "╰" + "─" * (width - 2) + "╯", a)
+    if title:
+        put(win, top, left + 3, f"┤ {title} ├", attr(accent, True))
+
+
+def shade(win, top: int, left: int, height: int, width: int) -> None:
+    """Blank the area a panel is about to occupy, so the board doesn't show."""
+    for y in range(top, top + height):
+        put(win, y, left, " " * width, attr(C_DIM))
 
 
 def hline(win, y: int, x: int, width: int, a: int = 0) -> None:
@@ -135,44 +148,73 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
     idx, problems, editing = 0, [], False
     cursor = 0
 
+    pulse = fx.Pulse(0.9)
+    stdscr.timeout(90)
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        put(stdscr, 0, 2, title, attr(C_HEAD, True))
-        hline(stdscr, 1, 2, w - 4, attr(C_DIM))
+        width = min(w - 4, 96)
+        left = max(1, (w - width) // 2)
+        rows = sum(2 + bool(f.hint and i == idx) for i, f in enumerate(fields))
+        height = min(h - 1, rows + 6 + (len(problems) + 1 if problems else 0))
+        top = max(0, (h - height) // 2)
 
-        y = 3
+        shade(stdscr, top, left, height, width)
+        frame(stdscr, top, left, height, width, title)
+
+        y = top + 2
+        label_x, value_x = left + 3, left + 22
         for i, f in enumerate(fields):
             selected = i == idx
+            marker = "▸" if selected else " "
             label = f.label + (" *" if f.required else "")
-            put(stdscr, y, 2, label, attr(C_ACCENT if selected else C_DIM, selected))
-            box_a = attr(C_SEL) if (selected and editing) else attr(
-                C_DIM, selected)
-            shown = f.display or ("…" if f.kind == "text" else "")
-            put(stdscr, y, 22, ellipsis(shown, w - 26).ljust(min(w - 26, 56)), box_a)
+            put(stdscr, y, label_x - 2, marker, attr(C_NEON, True))
+            put(stdscr, y, label_x, label,
+                attr(C_ACCENT if selected else C_DIM, selected))
+
+            room = width - (value_x - left) - 4
+            if f.kind == "choice" and f.choices:
+                # Every option on the row, the current one lit. Far clearer
+                # than a single value you have to arrow through blind.
+                x = value_x
+                for val, text in f.choices:
+                    chip = f" {ellipsis(text, 22)} "
+                    if x - left + len(chip) > width - 3:
+                        put(stdscr, y, x, "…", attr(C_DIM))
+                        break
+                    on = val == f.value
+                    put(stdscr, y, x, chip,
+                        attr(C_SEL if on and selected else
+                             (C_NEON if on else C_DIM), on))
+                    x += len(chip) + 1
+            else:
+                text = f.value or ""
+                box = attr(C_GHOST) if not (selected and editing) else attr(C_DEEP)
+                put(stdscr, y, value_x, ellipsis(text, room).ljust(room), box)
+                if selected and editing:
+                    put(stdscr, y, value_x + min(cursor, room),
+                        fx.caret(pulse.phase), attr(C_NEON, True))
+                elif selected and not text:
+                    put(stdscr, y, value_x, "enter to type", attr(C_DIM))
+
             if selected and f.hint:
-                put(stdscr, y + 1, 22, f.hint, attr(C_DIM))
+                put(stdscr, y + 1, value_x, ellipsis(f.hint, room), attr(C_VIOLET))
                 y += 1
             y += 2
 
         if problems:
-            put(stdscr, h - 4 - len(problems), 2, "Can't save yet:", attr(C_WARN, True))
+            put(stdscr, y, label_x, "can't save yet", attr(C_WARN, True))
             for i, p in enumerate(problems):
-                put(stdscr, h - 3 - len(problems) + i, 4, "• " + p, attr(C_WARN))
+                put(stdscr, y + 1 + i, label_x + 2, "· " + p, attr(C_WARN))
 
-        keys = ("type to edit · ←/→ change · Enter next · Ctrl-S or F2 save · Esc cancel"
-                if not editing else
-                "editing — Enter/Tab to confirm · Esc to stop editing")
-        put(stdscr, h - 2, 2, keys, attr(C_DIM))
-        f = fields[idx]
-        if editing and f.kind == "text":
-            curses.curs_set(1)
-            stdscr.move(3 + idx * 2, min(22 + cursor, w - 2))
-        else:
-            curses.curs_set(0)
+        keys = ("↑↓ move · ←→ choose · enter edit · ctrl-s save · esc cancel"
+                if not editing else "typing — enter confirms · esc stops")
+        put(stdscr, top + height - 2, label_x, keys, attr(C_DIM))
         stdscr.refresh()
 
         ch = stdscr.getch()
+        if ch == -1:
+            continue                                   # animation frame
 
         if ch == 27:                                   # Esc
             if editing:
@@ -182,11 +224,13 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             if any(f.value for f in fields) and not confirm(
                     stdscr, "discard this form?"):
                 continue
+            stdscr.timeout(-1)
             return None
         if ch in (19, curses.KEY_F2):                  # Ctrl-S / F2
             values = {f.key: f.value for f in fields}
             problems = validate(values) if validate else []
             if not problems:
+                stdscr.timeout(-1)
                 return values
             continue
         if ch == curses.KEY_RESIZE:
@@ -231,25 +275,45 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             editing, cursor = True, len(f.value)
 
 
-def prompt(stdscr, label: str, value: str = "") -> str | None:
-    """One-line input on the bottom row. Returns None if cancelled.
+def prompt(stdscr, label: str, value: str = "", react=None) -> str | None:
+    """A floating one-line input. Returns None if cancelled.
 
-    This is the capture path: it has to be fast enough that writing something
-    down never feels like filling in a form.
+    This is the capture path, so it has to be quick, and it reacts as you
+    type: the caret breathes, the frame lights up once there is something in
+    it, and `react(value)` can put a live note under the field — which is how
+    "nothing" gets told it is a real answer rather than an empty one.
     """
-    curses.curs_set(1)
+    curses.curs_set(0)
     cursor = len(value)
+    pulse = fx.Pulse(0.9)
+    stdscr.timeout(90)                 # wake up to animate even with no input
     try:
         while True:
             h, w = stdscr.getmaxyx()
-            put(stdscr, h - 1, 0, " " * (w - 1))
-            put(stdscr, h - 1, 2, label, attr(C_ACCENT, True))
-            x = 2 + len(label) + 1
-            put(stdscr, h - 1, x, value, attr(C_DIM))
-            stdscr.move(h - 1, min(x + cursor, w - 2))
+            width = min(w - 6, max(48, len(label) + 42))
+            left = max(2, (w - width) // 2)
+            top = max(1, h // 2 - 2)
+
+            shade(stdscr, top, left, 5, width)
+            frame(stdscr, top, left, 5, width, label,
+                  C_NEON if value else C_FRAME,
+                  C_NEON if value else C_ACCENT)
+
+            inner = width - 6
+            shown = value[-inner:] if len(value) > inner else value
+            put(stdscr, top + 2, left + 3, shown.ljust(inner), attr(C_GHOST))
+            put(stdscr, top + 2, left + 3 + min(cursor, inner),
+                fx.caret(pulse.phase), attr(C_NEON, True))
+
+            note, tone = (react(value) if react else (None, C_DIM))
+            put(stdscr, top + 3, left + 3,
+                ellipsis(note or "enter to save · esc to cancel", inner),
+                attr(tone if note else C_DIM))
             stdscr.refresh()
 
             ch = stdscr.getch()
+            if ch == -1:
+                continue                       # just a frame of animation
             if ch == 27:
                 return None
             if ch in (curses.KEY_ENTER, 10, 13):
@@ -262,6 +326,10 @@ def prompt(stdscr, label: str, value: str = "") -> str | None:
                 cursor = max(0, cursor - 1)
             elif ch == curses.KEY_RIGHT:
                 cursor = min(len(value), cursor + 1)
+            elif ch == curses.KEY_HOME:
+                cursor = 0
+            elif ch == curses.KEY_END:
+                cursor = len(value)
             elif ch == curses.KEY_DC:
                 value = value[:cursor] + value[cursor + 1:]
             elif ch == curses.KEY_RESIZE:
@@ -270,11 +338,19 @@ def prompt(stdscr, label: str, value: str = "") -> str | None:
                 value = value[:cursor] + chr(ch) + value[cursor:]
                 cursor += 1
     finally:
+        stdscr.timeout(-1)
         curses.curs_set(0)
 
 
 def confirm(stdscr, question: str) -> bool:
+    """A red-framed panel. Destructive things should look destructive."""
     h, w = stdscr.getmaxyx()
-    put(stdscr, h - 1, 2, f"{question} [y/N]".ljust(w - 4), attr(C_WARN, True))
+    width = min(w - 6, max(40, len(question) + 10))
+    left, top = max(2, (w - width) // 2), max(1, h // 2 - 2)
+    shade(stdscr, top, left, 5, width)
+    frame(stdscr, top, left, 5, width, "confirm", C_WARN, C_WARN)
+    put(stdscr, top + 2, left + 3, ellipsis(question, width - 6), attr(C_GHOST))
+    put(stdscr, top + 3, left + 3, "y to confirm · anything else cancels",
+        attr(C_DIM))
     stdscr.refresh()
     return stdscr.getch() in (ord("y"), ord("Y"))

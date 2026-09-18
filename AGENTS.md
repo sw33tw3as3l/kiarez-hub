@@ -8,7 +8,14 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
   holds the walk/path/descendants helpers.
 - `space/db.py` — SQLite. `roll_forward()` runs at startup; `set_status()`
   doubles as the clock (time accrues while a task is in `doing`).
-- `space/ui.py` — curses primitives, the field editor, the one-line prompt.
+- `space/theme.py` — the palette. `init()` writes real RGB into colour slots
+  when `can_change_color()`, else falls back to ANSI. All `C_*` pair ids live
+  here; `ui.py` re-exports them.
+- `space/fx.py` — animation and texture: boot glitch, sweeps, eighth-block
+  bars, the breathing caret. Everything aborts on a keypress and respects
+  `SPACE_NO_FX`.
+- `space/ui.py` — curses primitives, framed panels, the field editor, the
+  reactive one-line prompt.
 - `space/app.py` — the five views.
 - `space/cli.py` — scriptable commands.
 - `space/review.py` — the daily questions and the Sunday weekly. Two answers
@@ -45,4 +52,11 @@ Gotchas already paid for:
   the subparser overwrites the top-level value.
 - Verifying the TUI: read the window back with `stdscr.instr()` (see git
   history) rather than parsing the escape stream — and read `(w-1)*4` bytes,
-  since multibyte characters make a column count too short.
+  since multibyte characters make a column count too short. A curses window
+  is read-only, so scripted-key harnesses need a delegating proxy object
+  rather than assigning over `getch`.
+- Animated widgets set `stdscr.timeout(ms)` and must treat `getch() == -1` as
+  "draw another frame". Every path out of them restores `timeout(-1)`, or the
+  main loop starts spinning.
+- `App.alive()` decides whether the main loop animates or blocks. Keep it
+  cheap and keep it honest: an idle board must block.

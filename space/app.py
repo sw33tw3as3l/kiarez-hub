@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 import curses
 import random
+import time
 from datetime import date
 
 from . import db
@@ -14,10 +15,12 @@ from .model import (
     ESTIMATE_LABELS, GREETINGS, add_days, can_start, fmt_minutes, ship_ratio,
     today,
 )
+from . import fx
 from .ui import (
-    C_ACCENT, C_DIM, C_DOING, C_DONE, C_HEAD, C_SEL, C_WARN, Field, attr,
-    confirm, disable_flow_control, ellipsis, estimate_field, hline,
-    init_colors, kind_field, prompt, put, run_form, wrap,
+    C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
+    C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN, Field, attr, confirm,
+    disable_flow_control, ellipsis, estimate_field, frame, hline, init_colors,
+    kind_field, prompt, put, run_form, wrap,
 )
 
 VIEWS = [("today", "Today"), ("calendar", "Calendar"), ("inbox", "Inbox"),
@@ -28,7 +31,7 @@ STATUS_COLOR = {"todo": C_DIM, "doing": C_DOING, "done": C_DONE}
 # Watchlist colours, as chosen per app. Red is time spent against you and is
 # what the day strip counts as distraction; the rest is time merely accounted for.
 APP_COLOR = {"red": C_WARN, "yellow": C_DOING, "green": C_DONE,
-             "cyan": C_HEAD, "dim": C_DIM}
+             "cyan": C_ACCENT, "dim": C_DIM}
 
 HELP = [
     ("1-5 / Tab", "switch view"),
@@ -55,16 +58,20 @@ class App:
         self.list_row = 0            # inbox / tree / review cursor
         self.message = ""
         self.greeting = random.choice(GREETINGS)
+        self.pulse = fx.Pulse(1.3)
+        self.message_at = 0.0
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
         db.close_out(conn, today())
         if rolled:
+            self.message_at = time.monotonic()
             self.message = f"{rolled} unfinished task(s) rolled forward to today"
         # The board is the backstop for the day's question: if the notification
         # was missed, opening the board says so. It never blocks you.
         if not db.day_log(conn, review_day()).answered:
             note = "the day's question is unanswered — press w"
+            self.message_at = time.monotonic()
             self.message = f"{self.message} · {note}" if self.message else note
 
     # --- data ---------------------------------------------------------------
@@ -146,15 +153,23 @@ class App:
         self.stdscr.refresh()
 
     def draw_header(self, w):
-        put(self.stdscr, 0, 2, "kiarez space", attr(C_ACCENT, True))
-        put(self.stdscr, 0, 16, self.greeting, attr(C_DIM))
+        put(self.stdscr, 0, 2, "◤", attr(C_NEON, True))
+        put(self.stdscr, 0, 4, "KIAREZ", attr(C_NEON, True))
+        put(self.stdscr, 0, 11, "SPACE", attr(C_ACCENT, True))
+        put(self.stdscr, 0, 18, self.greeting, attr(C_VIOLET))
+
         x = w - 2
-        for key, label in reversed(VIEWS):
-            chip = f" {label} "
+        for i, (key, label) in enumerate(reversed(VIEWS)):
+            n = len(VIEWS) - i
+            chip = f" {n} {label} "
             x -= len(chip) + 1
+            on = key == self.view
             put(self.stdscr, 0, x, chip,
-                attr(C_SEL, True) if key == self.view else attr(C_DIM))
-        hline(self.stdscr, 1, 2, w - 4, attr(C_DIM))
+                attr(C_SEL_ALT, True) if on else attr(C_DIM))
+
+        # A rule that is brighter under the live view — the eye follows it.
+        hline(self.stdscr, 1, 2, w - 4, attr(C_FRAME))
+        put(self.stdscr, 1, 2, "━" * 14, attr(C_NEON))
 
     def day_strip(self, y, w):
         """The line that says whether this day was real."""
@@ -165,16 +180,19 @@ class App:
         log = db.day_log(self.conn, self.day)
 
         d = date.fromisoformat(self.day)
-        label = "  today" if self.day == today() else ""
-        put(self.stdscr, y, 2, d.strftime("%a %d %b %Y") + label, attr(C_HEAD, True))
+        label = "  ◂ today" if self.day == today() else ""
+        put(self.stdscr, y, 2, d.strftime("%a %d %b %Y").upper() + label,
+            attr(C_ACCENT, True))
 
-        bits = [(f"ship {shipped}/{done}", C_DONE if shipped else C_DIM),
-                (f"distraction {fmt_minutes(distraction)}",
+        bits = [(f"◆ ship {shipped}/{done}", C_DONE if shipped else C_DIM),
+                (f"▲ distraction {fmt_minutes(distraction)}",
                  C_WARN if distraction else C_DIM),
-                (f"tracked {fmt_minutes(tracked)}", C_DIM)]
+                (f"◇ tracked {fmt_minutes(tracked)}", C_DIM)]
         x = 34
         for text, color in bits:
-            put(self.stdscr, y, x, text, attr(color))
+            hot = color is C_WARN and distraction >= 60
+            put(self.stdscr, y, x, text,
+                attr(color, hot and self.pulse.on(0.55)))
             x += len(text) + 4
         if log.answered:
             room = max(10, (w - x - 6) // 2)
@@ -184,7 +202,8 @@ class App:
                 put(self.stdscr, y, x2, f"not: {ellipsis(log.not_done, room)}",
                     attr(C_WARN))
         elif self.day == review_day():
-            put(self.stdscr, y, x, "unanswered — press w", attr(C_WARN))
+            put(self.stdscr, y, x, "unanswered — press w",
+                attr(C_WARN, self.pulse.on(0.6)))
         elif self.day < today():
             put(self.stdscr, y, x, "unanswered, and closed", attr(C_DIM))
 
@@ -196,10 +215,14 @@ class App:
 
         for ci, status in enumerate(STATUS_KEYS):
             x, items = 2 + ci * cw, cols[STATUS_KEYS[ci]]
-            put(self.stdscr, top, x, f"{STATUS_LABELS[status]} ({len(items)})",
+            head = f"{STATUS_LABELS[status].upper()}  {len(items):02d}"
+            put(self.stdscr, top, x, head,
                 attr(STATUS_COLOR[status], ci == self.col))
-            hline(self.stdscr, top + 1, x, cw - 2,
-                  attr(C_ACCENT if ci == self.col else C_DIM))
+            live = ci == self.col
+            hline(self.stdscr, top + 1, x, cw - 2, attr(C_FRAME))
+            if live:
+                put(self.stdscr, top + 1, x, "━" * min(cw - 2, len(head) + 2),
+                    attr(C_NEON))
             start = self.scroll_start(items, ci, list_h - 2)
             if start:
                 put(self.stdscr, top + 2, x, f"↑ {start} above", attr(C_DIM))
@@ -211,14 +234,19 @@ class App:
                     put(self.stdscr, y, x, f"↓ {len(items) - ri} more", attr(C_DIM))
                     break
                 on = ci == self.col and ri == self.row
-                put(self.stdscr, y, x, ("▸ " if on else "  ") + ellipsis(t.title, cw - 5),
+                edge = "┃" if on else "│"
+                put(self.stdscr, y, x, edge,
+                    attr(C_NEON if on else C_FRAME, on))
+                put(self.stdscr, y, x + 2, ellipsis(t.title, cw - 6),
                     attr(C_SEL, True) if on else attr(STATUS_COLOR[status]))
                 y += 1
                 if t.outcome:
-                    put(self.stdscr, y, x + 2, ellipsis("✓ " + t.outcome, cw - 6),
-                        attr(C_DIM))
+                    put(self.stdscr, y, x, edge, attr(C_NEON if on else C_FRAME))
+                    put(self.stdscr, y, x + 2, ellipsis("→ " + t.outcome, cw - 7),
+                        attr(C_GHOST if on else C_DIM))
                     y += 1
-                put(self.stdscr, y, x + 2, ellipsis(self.card_meta(t), cw - 6),
+                put(self.stdscr, y, x, edge, attr(C_NEON if on else C_FRAME))
+                put(self.stdscr, y, x + 2, ellipsis(self.card_meta(t), cw - 7),
                     attr(C_WARN if not t.defined else C_DIM))
                 y += 2
 
@@ -505,23 +533,38 @@ class App:
 
     def draw_footer(self, h, w):
         if self.message:
-            put(self.stdscr, h - 2, 2, ellipsis(self.message, w - 4), attr(C_WARN))
+            fresh = time.monotonic() - self.message_at < 1.2
+            put(self.stdscr, h - 2, 2, ("▸ " if fresh else "  ")
+                + ellipsis(self.message, w - 6),
+                attr(C_NEON if fresh else C_DIM, fresh))
         put(self.stdscr, h - 1, 2,
             "c capture · e define · space advance · s schedule · w answer · ? help · q quit",
             attr(C_DIM))
 
     # --- actions ------------------------------------------------------------
 
+    @staticmethod
+    def capture_react(value: str):
+        """Live note under the capture field."""
+        n = len(value.strip())
+        if not n:
+            return "anything at all — you define it later, not now", C_DIM
+        if n < 12:
+            return "a little more and you'll know what it meant tomorrow", C_VIOLET
+        return f"{n} characters · enter drops it in the inbox", C_DONE
+
     def capture(self):
         """One line, no fields, from anywhere. Lands in the inbox."""
-        text = prompt(self.stdscr, "capture:")
+        text = prompt(self.stdscr, "capture", react=self.capture_react)
         if text and text.strip():
             db.capture(self.conn, text)
+            self.message_at = time.monotonic()
             self.message = "captured to inbox"
 
     def task_form(self, task=None, day=None):
         choices = self.node_choices()
         if not choices:
+            self.message_at = time.monotonic()
             self.message = "build the tree first (press 4, then A) — a task needs a goal"
             return
         fields = [
@@ -551,9 +594,11 @@ class App:
             return
         if task:
             db.update_task(self.conn, task.id, **vals)
+            self.message_at = time.monotonic()
             self.message = "defined"
         else:
             db.capture(self.conn, day=day if day is not None else self.day, **vals)
+            self.message_at = time.monotonic()
             self.message = "added"
         if vals["estimate"] in ("half_day", "day_plus"):
             self.message += " — that's bigger than half a day; consider splitting it"
@@ -564,6 +609,7 @@ class App:
         happened rather than what did."""
         day = review_day()
         if self.day != day:
+            self.message_at = time.monotonic()
             self.message = (f"{self.day} is closed — {day} is the day still "
                             f"open for answering")
             return
@@ -571,12 +617,26 @@ class App:
         answers = {}
         for key, question, _hint in questions_for(day):
             existing = log.did if key == "did" else log.not_done
-            got = prompt(self.stdscr, question.lower(), existing)
+
+            def react(value, key=key):
+                v = value.strip().lower()
+                if not v:
+                    return ("blank is not an answer — write \"nothing\" if that's true"
+                            if key == "did" else
+                            "blank means there was nothing you missed"), C_DIM
+                if v in ("nothing", "none", "-"):
+                    return "recorded as a real answer, and it will show", C_WARN
+                return ("that is what the day was for" if key == "did"
+                        else "written down is better than carried"), C_DONE
+
+            got = prompt(self.stdscr, question.lower(), existing, react=react)
             if got is None:
+                self.message_at = time.monotonic()
                 self.message = "left unanswered"
                 return
             answers[key] = got
         db.log_day(self.conn, day, answers["did"] or "nothing", answers["missed"])
+        self.message_at = time.monotonic()
         self.message = "logged"
 
     def advance(self, t):
@@ -584,10 +644,29 @@ class App:
         if nxt == "doing":
             blockers = can_start(t)
             if blockers:
+                self.message_at = time.monotonic()
                 self.message = "can't start: " + ", ".join(blockers) + " — press e"
                 return
         db.set_status(self.conn, t.id, nxt)
+        self.message_at = time.monotonic()
         self.message = f"{ellipsis(t.title, 30)} → {STATUS_LABELS[nxt]}"
+        if nxt == "done":
+            self.celebrate(t)
+
+    def celebrate(self, task) -> None:
+        """A wave of light across the card that just got finished.
+
+        Shipping should feel different from admin — the sweep is magenta for
+        ship and a quiet mint for support, and it lasts a third of a second.
+        """
+        h, w = self.stdscr.getmaxyx()
+        cw = max(18, (w - 6) // 3)
+        x = 2 + STATUS_KEYS.index("done") * cw
+        hot = attr(C_NEON, True) if task.kind == "ship" else attr(C_DONE, True)
+        fx.sweep(self.stdscr, h - 3, 2,
+                 ("◆ SHIPPED  " if task.kind == "ship" else "✓ done  ")
+                 + ellipsis(task.title, 44),
+                 attr(C_DIM), hot)
 
     def show_help(self):
         self.stdscr.erase()
@@ -630,6 +709,7 @@ class App:
             return True
         if ch in (ord("a"), ord("A")) and self.view != "tree":
             self.view, self.list_row = "tree", 0
+            self.message_at = time.monotonic()
             self.message = "pick where it goes: a adds a child, A adds a root"
             return True
         if ch == ord("w"):
@@ -669,6 +749,7 @@ class App:
             self.task_form(t)
         elif ch == ord("S") and t:
             db.schedule(self.conn, t.id, None)
+            self.message_at = time.monotonic()
             self.message = "sent back to the inbox"
         elif ch == ord("x") and t:
             if confirm(self.stdscr, f"delete '{ellipsis(t.title, 40)}'?"):
@@ -702,9 +783,11 @@ class App:
         elif ch == ord("s") and t:
             blockers = can_start(t)
             if blockers:
+                self.message_at = time.monotonic()
                 self.message = "define it first: " + ", ".join(blockers) + " — press e"
             else:
                 db.schedule(self.conn, t.id, self.day)
+                self.message_at = time.monotonic()
                 self.message = f"scheduled for {self.day}"
         elif ch == ord("x") and t:
             if confirm(self.stdscr, f"delete '{ellipsis(t.title, 40)}'?"):
@@ -736,12 +819,14 @@ class App:
             name = prompt(self.stdscr, "new root:")
             if name and name.strip():
                 db.add_node(self.conn, name)
+                self.message_at = time.monotonic()
                 self.message = f"'{name.strip()}' added as a root"
         elif ch == ord("a") and node:
             name = prompt(self.stdscr, f"child of {node.name}:")
             if name and name.strip():
                 db.add_node(self.conn, name, node.id)
                 self.collapsed.discard(node.id)
+                self.message_at = time.monotonic()
                 self.message = f"'{name.strip()}' added under {node.name}"
         elif ch in (ord("e"), curses.KEY_ENTER, 10, 13) and node:
             name = prompt(self.stdscr, "rename:", node.name)
@@ -770,6 +855,7 @@ class App:
             (n.id, "  " * depth + n.name)
             for n, depth in t.walk() if n.id not in banned]
         if len(options) == 1 and not node.parent_id:
+            self.message_at = time.monotonic()
             self.message = "nowhere to move it — it's already a root"
             return
         vals = run_form(self.stdscr, f"Move '{node.name}'",
@@ -779,6 +865,7 @@ class App:
         if vals is None:
             return
         err = db.move_node(self.conn, node.id, vals["parent"] or None)
+        self.message_at = time.monotonic()
         self.message = err or f"moved under {t.path(vals['parent']) or 'top level'}"
 
     def handle_review(self, ch):
@@ -794,6 +881,7 @@ class App:
                 db.delete(self.conn, "tasks", pick.id)
         elif ch == ord("S") and pick:
             db.update_task(self.conn, pick.id, day=None, rolls=0)
+            self.message_at = time.monotonic()
             self.message = "back to the inbox, roll count reset"
         return True
 
@@ -802,8 +890,11 @@ class App:
         self.stdscr.keypad(True)
         while True:
             self.draw()
+            # Only spin when something on screen is moving; otherwise block,
+            # so an idle board costs nothing at all.
+            self.stdscr.timeout(180 if self.alive() else -1)
             ch = self.stdscr.getch()
-            if ch == curses.KEY_RESIZE:
+            if ch in (-1, curses.KEY_RESIZE):
                 continue
             if not self.handle(ch):
                 return
@@ -812,6 +903,8 @@ class App:
 def main(stdscr):
     init_colors()
     disable_flow_control()
+    curses.curs_set(0)
+    fx.boot(stdscr, "a board that knows what the day cost")
     App(stdscr, db.connect()).run()
 
 
