@@ -20,14 +20,6 @@ STATUSES = [("todo", "To Do"), ("doing", "Doing"), ("done", "Done")]
 STATUS_KEYS = [k for k, _ in STATUSES]
 STATUS_LABELS = dict(STATUSES)
 
-# Real work vs fake work. "Ship" means someone other than you could notice it
-# happened. "Support" is everything that only makes shipping easier later —
-# tooling, config, research, process. Support isn't bad; a week that is all
-# support is.
-KINDS = [("ship", "Ship"), ("support", "Support")]
-KIND_KEYS = [k for k, _ in KINDS]
-KIND_LABELS = dict(KINDS)
-
 # The sizes you estimate in. This is a default, not a law: the scale lives in
 # the database and `load_scale` replaces these IN PLACE at connect time, so
 # every module that imported them keeps seeing the current one.
@@ -180,7 +172,7 @@ class Task:
     node_id: str | None = None        # anywhere in the tree, leaf or not
     day: str | None = None            # None = inbox, not yet scheduled
     status: str = "todo"
-    kind: str | None = None           # ship | support
+    kind: str | None = None           # retired; kept so old rows keep theirs
     outcome: str | None = None        # definition of done
     next_action: str | None = None
     estimate: str | None = None
@@ -195,13 +187,13 @@ class Task:
     @property
     def defined(self) -> bool:
         return bool(self.node_id and self.outcome and self.next_action
-                    and self.kind and self.estimate)
+                    and self.estimate)
 
     @property
     def missing(self) -> list[str]:
         return [name for name, val in (
             ("goal", self.node_id), ("outcome", self.outcome),
-            ("next action", self.next_action), ("kind", self.kind),
+            ("next action", self.next_action),
             ("estimate", self.estimate)) if not val]
 
     @property
@@ -353,7 +345,6 @@ def estimate_hint(accuracy: dict[str, tuple[int, float]], key: str) -> str:
             f"{fmt_minutes(round(actual))} ({ratio:.1f}×, {verdict}, n={n})")
 
 
-def ship_ratio(tasks) -> tuple[int, int]:
-    """(shipped, total) over finished tasks — the real-vs-fake-work number."""
-    done = [t for t in tasks if t.status == "done"]
-    return sum(t.kind == "ship" for t in done), len(done)
+def done_count(tasks) -> tuple[int, int]:
+    """(finished, total) — the only two numbers a pile of tasks owes you."""
+    return sum(t.status == "done" for t in tasks), len(tasks)

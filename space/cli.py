@@ -26,9 +26,9 @@ from .review import review_day
 from .text import cols, ellipsis, pad
 from .model import (
     ESTIMATE_MINUTES, estimate_accuracy, ESTIMATE_KEYS, ESTIMATE_LABELS,
-    KIND_KEYS, KIND_LABELS, NAGGING_ROLLS, parse_duration,
+    NAGGING_ROLLS, parse_duration,
     STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
-    ship_ratio, today,
+    done_count, today,
 )
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
@@ -88,8 +88,7 @@ def show(t, paths):
     if not t.defined:
         print(f"          {WARN}needs {', '.join(t.missing)}{OFF}")
         return
-    bits = [KIND_LABELS[t.kind], ESTIMATE_LABELS[t.estimate],
-            paths.get(t.node_id, "—")]
+    bits = [ESTIMATE_LABELS.get(t.estimate, "—"), paths.get(t.node_id, "—")]
     if t.actual_minutes:
         bits.append(f"actual {fmt_minutes(t.actual_minutes)}")
     if t.rolls:
@@ -108,11 +107,11 @@ def cmd_today(conn, a):
     db.roll_forward(conn)
     items = db.tasks(conn, day=day)
     paths = db.node_paths(conn)
-    shipped, done = ship_ratio(items)
+    finished, total = done_count(items)
     mins = db.usage_total(conn, day) // 60
     log = db.day_log(conn, day)
 
-    print(f"{ACC}{day}{OFF}   ship {shipped}/{done}   "
+    print(f"{ACC}{day}{OFF}   done {finished}/{total}   "
           f"distraction {fmt_minutes(mins)}")
     if log.answered:
         print(f"{DIM}did: {log.did}{OFF}")
@@ -155,8 +154,7 @@ def cmd_define(conn, a):
     if a.goal:
         fields["node_id"] = resolve_node(conn, a.goal)
     for key, val in (("outcome", a.outcome), ("next_action", a.next_action),
-                     ("kind", a.kind), ("estimate", a.estimate),
-                     ("title", a.title)):
+                     ("estimate", a.estimate), ("title", a.title)):
         if val:
             fields[key] = val
     db.update_task(conn, tid, **fields)
@@ -200,12 +198,12 @@ def cmd_tree(conn, a):
         return
     for node, depth in t.walk():
         sub = db.subtree_tasks(conn, node.id)
-        shipped, finished = ship_ratio(sub)
-        open_now = sum(x.status != "done" for x in sub)
+        finished, total = done_count(sub)
+        open_now = total - finished
         leaf = t.is_leaf(node.id)
         name = ("  " * depth) + ("" if leaf else "▾ ") + node.name
         print(f"{ACC}{node.id[:8]}{OFF}  {pad(ellipsis(name, 44), 44)} "
-              f"{DIM}{open_now} open · {shipped}/{finished} shipped"
+              f"{DIM}{open_now} open · {finished} done"
               f"{'' if leaf else ' (subtree)'}{OFF}")
 
 
@@ -448,10 +446,10 @@ def cmd_stats(conn, a):
         select count(*) total, coalesce(sum(status='done'),0) done,
                coalesce(sum(status='doing'),0) doing,
                coalesce(sum(day is null and status!='done'),0) inbox,
-               coalesce(sum(kind='ship' and status='done'),0) shipped
+               0 shipped
           from tasks""").fetchone()
     print(f"tasks   {row['total']}")
-    print(f"done    {row['done']} ({row['shipped']} shipped)")
+    print(f"done    {row['done']}")
     print(f"doing   {row['doing']}")
     print(f"inbox   {row['inbox']}")
     print(f"nodes   {len(db.nodes(conn))}")
@@ -547,7 +545,6 @@ def build_parser():
     s.add_argument("--goal")
     s.add_argument("--outcome")
     s.add_argument("--next", dest="next_action")
-    s.add_argument("--kind", choices=KIND_KEYS)
     s.add_argument("--estimate", choices=ESTIMATE_KEYS or None)
     s.set_defaults(fn=cmd_define)
 

@@ -14,7 +14,9 @@ REVIEW="$HOME/.local/bin/space-review"
 TERMINAL="${SPACE_TERMINAL:-kitty}"
 
 notify() {
-  local title="kiarez space" body="How did the day go? One question."
+  local day="${1:-the day}"
+  local title="kiarez space"
+  local body="How did $day go? Two questions, about a minute."
   if command -v dunstify >/dev/null; then
     # dunstify blocks until the notification is acted on or expires, and
     # prints the chosen action — so a click can open the review directly.
@@ -53,14 +55,14 @@ while true; do
   day="$("$REVIEW" --day)"
 
   # Only interrupt if there is actually something to answer.
-  "$REVIEW" --check --for "$day" && notify
+  "$REVIEW" --check --for "$day" && notify "$day"
 
   # Then keep an eye on it until that day's window closes, catching you
   # whenever you come back to the keyboard rather than only at midnight.
   while "$REVIEW" --check --for "$day"; do
     sleep "$RETRY_EVERY"
     "$REVIEW" --check --for "$day" || break
-    session_unlocked && notify
+    session_unlocked && notify "$day"
   done
   sleep 60          # don't re-fire inside the same minute
 done

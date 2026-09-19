@@ -35,7 +35,7 @@ check("delete a node, tasks survive without it", lambda: (
         (db.task(c, tid) is not None and db.task(c, tid).node_id is None,
          "task vanished or kept a dead node"))(
         db.capture(c, "orphan", node_id=kid, day=today(),
-                   kind="ship", estimate="1h", outcome="x", next_action="y"))))
+                   estimate="1h", outcome="x", next_action="y"))))
 
 check("moving a node under itself is refused", lambda: (
     db.move_node(c, root, root) is not None, "self-parent allowed"))
@@ -72,7 +72,7 @@ check("empty tree renders a path", lambda: (
     db.tree(c).path(None) == "", "path of nothing is not empty"))
 
 check("can_start on a bare capture refuses", lambda: (
-    len(can_start(db.task(c, db.capture(c, "bare")))) == 5, "wrong blocker count"))
+    len(can_start(db.task(c, db.capture(c, "bare")))) == 4, "wrong blocker count"))
 
 check("week_start lands on a Monday", lambda: (
     __import__("datetime").date.fromisoformat(db.week_start(today())).weekday() == 0,
@@ -106,8 +106,7 @@ check("the scale can be extended and shrunk", lambda: (
 check("a custom size can be stored on a task", lambda: (
     (db.add_estimate(c, "7h", "7h", 420),
      (lambda t: db.task(c, t).estimate == "7h")(
-         db.capture(c, "custom", node_id=root, day=today(), kind="ship",
-                    estimate="7h", outcome="x", next_action="y")))[1],
+         db.capture(c, "custom", node_id=root, day=today(),                     estimate="7h", outcome="x", next_action="y")))[1],
     "the estimate column still refuses custom values"))
 
 from space.model import duration_key                       # noqa: E402
@@ -127,7 +126,7 @@ from space.model import (MAX_DOING_STRETCH, estimate_accuracy,               # n
 
 def timed(minutes_ago, estimate="1h"):
     tid = db.capture(c, f"ran {minutes_ago}m", node_id=root, day=today(),
-                     kind="ship", estimate=estimate, outcome="x", next_action="y")
+                     estimate=estimate, outcome="x", next_action="y")
     db.set_status(c, tid, "doing")
     db.update_task(c, tid, doing_since=(utc_now() - timedelta(minutes=minutes_ago))
                    .isoformat(timespec="seconds"))
@@ -181,8 +180,7 @@ def round_trip():
 
     s = db.connect(src)
     n = db.add_node(s, "Area")
-    db.capture(s, "carried over", node_id=n, day=today(), kind="ship",
-               estimate="1h", outcome="x", next_action="y")
+    db.capture(s, "carried over", node_id=n, day=today(),                estimate="1h", outcome="x", next_action="y")
     db.log_day(s, today(), "did it", "missed it")
     db.log_week(s, today(), "moved", "avoided", "changed")
     db.add_estimate(s, "45m", "45m", 45)

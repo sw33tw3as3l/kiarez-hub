@@ -56,12 +56,12 @@ else:
         store.add_estimate(conn, key, key, mins)
         for i in range(3):
             t = store.capture(conn, f"{key}-{i}", node_id=parent, day=today(),
-                              kind="ship", estimate=key, outcome="x",
+                              estimate=key, outcome="x",
                               next_action="y", status="done")
             store.update_task(conn, t, doing_seconds=mins * 90)
     for i in range(6):
         t = store.capture(conn, f"rotting {i}", node_id=parent, day=today(),
-                          kind="support", estimate="5m", outcome="x",
+                          estimate="5m", outcome="x",
                           next_action="y")
         store.update_task(conn, t, rolls=6)
     store.capture(conn, "a thought")

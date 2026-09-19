@@ -53,16 +53,10 @@ before you can start it:
 | goal | which node of the tree it serves |
 | outcome | how you'll know it's done |
 | next action | the first physical step |
-| kind | **Ship** or **Support** |
 | estimate | checked against what it actually took, per size |
 
 Trying to start an undefined task refuses and says what's missing. Friction
 sits at the moment of commitment, not the moment of capture.
-
-**Ship vs Support** is the real-work test. Ship means someone other than you
-could notice it happened. Support is tooling, config, research, process —
-work that only makes shipping easier later. Support isn't bad; a week that is
-all support is.
 
 **Days roll forward.** Anything unfinished moves to today automatically and
 its roll count goes up. Nothing is lost, and nothing quietly rots on an old
@@ -70,8 +64,8 @@ date — but the Review view knows exactly what you keep pushing.
 
 ## The five views
 
-1. **Today** — three columns, plus the strip that judges the day: ship ratio,
-   distraction minutes, and what you said shipped.
+1. **Today** — three columns, plus the strip that judges the day: what you
+   finished, distraction minutes, what is running, and your two answers.
 2. **Calendar** — the month. `✓` = you logged something that shipped, `·` =
    you logged nothing. Both are honest answers; a blank day is neither.
 3. **Inbox** — captured, not yet on a day. `s` schedules, `e` defines.

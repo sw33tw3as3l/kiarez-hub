@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 
 from . import db
 from .model import (
-    NAGGING_ROLLS, add_days, fmt_minutes, ship_ratio, today,
+    NAGGING_ROLLS, add_days, done_count, fmt_minutes, today,
 )
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
@@ -85,16 +85,13 @@ def day_facts(conn, day: str) -> None:
     tasks = db.tasks(conn, day=day)
     done = [t for t in tasks if t.status == "done"]
     unfinished = [t for t in tasks if t.status != "done"]
-    shipped, finished = ship_ratio(tasks)
-
     print(f"{ACC}{date.fromisoformat(day).strftime('%A %d %B')}{OFF}")
     print(f"{DIM}{'─' * 46}{OFF}")
 
     if done:
-        print(f"finished {len(done)} · {shipped} of them shipped")
+        print(f"finished {len(done)} of {len(tasks)}")
         for t in done[:6]:
-            mark = OK if t.kind == "ship" else DIM
-            print(f"  {mark}✓ {t.title}{OFF}")
+            print(f"  {OK}✓ {t.title}{OFF}")
         if len(done) > 6:
             print(f"  {DIM}… and {len(done) - 6} more{OFF}")
     else:
@@ -146,11 +143,11 @@ def week_facts(conn, day: str) -> None:
     start = db.week_start(day)
     span = [add_days(start, i) for i in range(7)]
     tasks = [t for d in span for t in db.tasks(conn, day=d)]
-    shipped, finished = ship_ratio(tasks)
+    finished, total = done_count(tasks)
 
     print(f"\n{ACC}The week of {start}{OFF}")
     print(f"{DIM}{'─' * 46}{OFF}")
-    print(f"finished {finished} · {shipped} shipped")
+    print(f"finished {finished} of {total}")
 
     totals = {}
     for d in span:

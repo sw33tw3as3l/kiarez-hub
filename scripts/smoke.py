@@ -108,11 +108,11 @@ def check_outcomes(failures: list) -> None:
                        capture_output=True,
                        env=dict(os.environ, KIAREZ_SPACE_DB=db))
         keys = ("n" + "Formed task" + "\r" + "\r" + "it is done" + "\r"
-                + ARROW + "\r" + ARROW + "\r" + "first step" + "\r" + "\x13")
+                + ARROW + "\r" + "first step" + "\r" + "\x13")
         conn = board(db, keys)
         row = conn.execute("select * from tasks where title = 'Formed task'").fetchone()
         expect("form creates a complete task", row is not None
-               and all(row[c] for c in ("outcome", "kind", "estimate",
+               and all(row[c] for c in ("outcome", "estimate",
                                         "next_action", "node_id")),
                f"row={dict(row) if row else None}")
 
@@ -154,12 +154,12 @@ def check_outcomes(failures: list) -> None:
         subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
                        capture_output=True,
                        env=dict(os.environ, KIAREZ_SPACE_DB=db))
-        keys = ("n" + "Entered task" + "\r\r" + "done" + "\r\r\r"
+        keys = ("n" + "Entered task" + "\r\r" + "done" + "\r\r"
                 + "go" + "\r" + "\x13")
         conn = board(db, keys)
         row = conn.execute("select * from tasks").fetchone()
         expect("enter settles choice fields", row is not None
-               and row["kind"] and row["estimate"],
+               and row["estimate"],
                f"row={dict(row) if row else None}")
 
         # < and > must move the task, not the view.
@@ -170,7 +170,7 @@ def check_outcomes(failures: list) -> None:
         cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Shift me"],
                              capture_output=True, text=True, env=env).stdout.strip()
         subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
-                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--outcome", "done", "--estimate", "1h",
                         "--next", "go"], capture_output=True, env=env)
         subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
                        capture_output=True, env=env)
@@ -187,7 +187,7 @@ def check_outcomes(failures: list) -> None:
         subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
                        capture_output=True,
                        env=dict(os.environ, KIAREZ_SPACE_DB=db))
-        keys = ("n" + "Typed size" + "\r\r" + "done" + "\r" + ARROW + "\r"
+        keys = ("n" + "Typed size" + "\r\r" + "done" + "\r"
                 + "1h45" + "\r" + "go" + "\r" + "\x13")
         conn = board(db, keys)
         row = conn.execute("select estimate from tasks").fetchone()
@@ -204,7 +204,7 @@ def check_outcomes(failures: list) -> None:
         cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Far away"],
                              capture_output=True, text=True, env=env).stdout.strip()
         subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
-                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--outcome", "done", "--estimate", "1h",
                         "--next", "go"], capture_output=True, env=env)
         subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
                        capture_output=True, env=env)
@@ -225,7 +225,7 @@ def check_outcomes(failures: list) -> None:
         cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Do it"],
                              capture_output=True, text=True, env=env).stdout.strip()
         subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
-                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--outcome", "done", "--estimate", "1h",
                         "--next", "go"], capture_output=True, env=env)
         subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
                        capture_output=True, env=env)

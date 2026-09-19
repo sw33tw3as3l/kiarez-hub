@@ -8,7 +8,7 @@ import termios
 from dataclasses import dataclass
 
 from . import fx
-from .model import ESTIMATES, KINDS, duration_key, parse_duration
+from .model import ESTIMATES, duration_key, parse_duration
 from .text import cols, ellipsis, fit, pad, wrap          # noqa: F401
 from .theme import (                                        # noqa: F401
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
@@ -122,10 +122,6 @@ def estimate_field(value: str = "", hint=None) -> Field:
                  "← → to pick, or just type a length: 45m, 1h30, 2d")
 
 
-def kind_field(value: str = "") -> Field:
-    return Field("kind", "Kind", "choice", required=True, choices=list(KINDS),
-                 value=value,
-                 hint="Ship = someone else could notice it · Support = only helps you ship later")
 
 
 class FormCancelled(Exception):

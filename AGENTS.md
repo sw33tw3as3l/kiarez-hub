@@ -49,7 +49,9 @@ Rules that matter:
   is never stored, so nesting under a goal needs no migration. Tasks reference
   any node. `move_node()` refuses cycles; deleting cascades to the subtree and
   nulls the tasks' `node_id`.
-- Ship vs Support is on every task and drives the day strip and Review.
+- `tasks.kind` is retired. The column stays so old rows keep what they had,
+  but nothing reads it and nothing requires it; `done_count()` replaced
+  `ship_ratio()`.
 - The estimate field is `kind="duration"`: chips plus free typing. A typed
   length is parsed live, canonicalised by `duration_key()`, and registered on
   save by `App.register_estimate()` — a one-off with no minutes behind it

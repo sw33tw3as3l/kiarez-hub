@@ -11,9 +11,9 @@ from datetime import date
 from . import db
 from .review import questions_for, review_day
 from .model import (
-    ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS, KIND_LABELS,
+    ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS,
     NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start,
-    estimate_accuracy, estimate_hint, fmt_minutes, parse_duration, ship_ratio,
+    done_count, estimate_accuracy, estimate_hint, fmt_minutes, parse_duration,
     today,
 )
 from . import fx
@@ -23,7 +23,7 @@ from .ui import (
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
     C_NEON, C_SEL, C_SEL_ALT, C_VIOLET, C_WARN, Field, attr, confirm,
     disable_flow_control, ellipsis, estimate_field, frame, hline, init_colors,
-    kind_field, prompt, put, run_form, wrap,
+    prompt, put, run_form, wrap,
 )
 
 VIEWS = [("today", "Today"), ("calendar", "Calendar"), ("inbox", "Inbox"),
@@ -280,8 +280,8 @@ class App:
 
     def day_strip(self, y, w):
         """The line that says whether this day was real."""
-        items = db.tasks(self.conn, day=self.day)
-        shipped, done = ship_ratio(items)
+        items = self.keep(db.tasks(self.conn, day=self.day))
+        finished, total = done_count(items)
         distraction = db.usage_total(self.conn, self.day, color="red") // 60
         tracked = db.usage_total(self.conn, self.day) // 60
         log = db.day_log(self.conn, self.day)
@@ -292,8 +292,8 @@ class App:
             attr(C_ACCENT, True))
 
         x = 34
-        put(self.stdscr, y, x, f"◆ ship {shipped}/{done}",
-            attr(C_DONE if shipped else C_DIM))
+        put(self.stdscr, y, x, f"◆ done {finished}/{total}",
+            attr(C_DONE if finished else C_DIM))
         x += 16
 
         # A gauge, not a number: four hours of red is the full bar.
@@ -394,7 +394,7 @@ class App:
     def card_meta(self, t) -> str:
         if not t.defined:
             return "needs " + ", ".join(t.missing)
-        bits = [KIND_LABELS[t.kind], ESTIMATE_LABELS[t.estimate]]
+        bits = [ESTIMATE_LABELS.get(t.estimate, "—")]
         if t.status != "todo" and t.actual_minutes:
             bits.append(f"actual {fmt_minutes(t.actual_minutes)}")
         if t.rolls:
@@ -424,7 +424,6 @@ class App:
         paths = db.node_paths(self.conn)
         put(self.stdscr, top + 1, 2, t.title, attr(C_ACCENT, True))
         bits = [f"goal: {paths.get(t.node_id, '—')}",
-                f"kind: {KIND_LABELS.get(t.kind, '—')}",
                 f"estimate: {ESTIMATE_LABELS.get(t.estimate, '—')}"]
         if t.actual_minutes:
             est = t.estimate_minutes
@@ -571,9 +570,8 @@ class App:
 
             own = db.tasks(self.conn, node_id=node.id)
             sub = db.subtree_tasks(self.conn, node.id)
-            open_now = sum(k.status != "done" for k in sub)
-            shipped, finished = ship_ratio(sub)
-            tail = f"{open_now} open · {shipped}/{finished} shipped"
+            finished, total = done_count(sub)
+            tail = f"{total - finished} open · {finished} done"
             if not leaf and len(sub) != len(own):
                 tail += f" · {len(sub) - len(own)} below"
 
@@ -855,7 +853,6 @@ class App:
             Field("outcome", "Done when", required=True,
                   value=(task.outcome if task else "") or "",
                   hint="how you'll know it's finished"),
-            kind_field((task.kind if task else "") or ""),
             estimate_field((task.estimate if task else "") or "",
                            hint=self.estimate_hint),
             Field("next_action", "Next action", required=True,
@@ -866,7 +863,7 @@ class App:
         def validate(v):
             return [f"{k} is required" for k, name in (
                 ("title", "title"), ("node_id", "goal"), ("outcome", "outcome"),
-                ("kind", "kind"), ("estimate", "estimate"),
+                ("estimate", "estimate"),
                 ("next_action", "next action")) if not str(v[k]).strip()]
 
         vals = run_form(self.stdscr, "Define task" if task else "New task",
@@ -935,19 +932,11 @@ class App:
             self.celebrate(t)
 
     def celebrate(self, task) -> None:
-        """A wave of light across the card that just got finished.
-
-        Shipping should feel different from admin — the sweep is magenta for
-        ship and a quiet mint for support, and it lasts a third of a second.
-        """
-        h, w = self.stdscr.getmaxyx()
-        cw = max(18, (w - 6) // 3)
-        x = 2 + STATUS_KEYS.index("done") * cw
-        hot = attr(C_NEON, True) if task.kind == "ship" else attr(C_DONE, True)
+        """A wave of light across the footer for whatever just got finished."""
+        h, _ = self.stdscr.getmaxyx()
         fx.sweep(self.stdscr, h - 3, 2,
-                 ("◆ SHIPPED  " if task.kind == "ship" else "✓ done  ")
-                 + ellipsis(task.title, 44),
-                 attr(C_DIM), hot)
+                 "✓ DONE  " + ellipsis(task.title, 44),
+                 attr(C_DIM), attr(C_NEON, True))
 
     def show_help(self):
         """Keys, and what the board is for. Fits itself to the screen."""
