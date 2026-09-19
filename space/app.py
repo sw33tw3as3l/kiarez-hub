@@ -9,7 +9,7 @@ import time
 from datetime import date
 
 from . import db
-from .review import questions_for, review_day
+from .review import owed, questions_for, review_day
 from .model import (
     ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS,
     NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start,
@@ -1239,9 +1239,84 @@ class App:
             self.message = "back to the inbox, roll count reset"
         return True
 
+    def locked_out(self) -> bool:
+        """Hold the board shut until the day's question is answered.
+
+        Only while a question is actually due — between midnight and the
+        four o'clock close. A board that demanded an answer about a day you
+        are still living would just teach you to type anything to get in.
+        Returns False if the user chose to quit instead.
+        """
+        while True:
+            day = owed(self.conn)
+            if not day:
+                return True
+
+            h, w = self.stdscr.getmaxyx()
+            self.stdscr.erase()
+            width = min(w - 4, 76)
+            left, top = max(1, (w - width) // 2), max(1, h // 2 - 8)
+            frame(self.stdscr, top, left, 13, width, "LOCKED 施錠",
+                  C_WARN, C_WARN)
+
+            when = date.fromisoformat(day).strftime("%A %d %B")
+            put(self.stdscr, top + 2, left + 3,
+                f"{when} is waiting for its answer.", attr(C_GHOST, True))
+
+            items = db.tasks(self.conn, day=day)
+            finished, total = done_count(items)
+            red = db.usage_total(self.conn, day, color="red") // 60
+            put(self.stdscr, top + 4, left + 3,
+                f"you finished {finished} of {total}", attr(C_DIM))
+            put(self.stdscr, top + 5, left + 3,
+                f"distraction {fmt_minutes(red)}",
+                attr(C_WARN if red else C_DIM))
+            for i, line in enumerate([
+                    "Two questions, about a minute. The board opens after them.",
+                    "It closes for good at 04:00, answered or not.",
+            ]):
+                put(self.stdscr, top + 7 + i, left + 3, line, attr(C_VIOLET))
+            put(self.stdscr, top + 11, left + 3,
+                "any key to answer · q to quit", attr(C_DIM))
+            self.stdscr.refresh()
+
+            self.stdscr.timeout(-1)
+            ch = self.stdscr.getch()
+            if ch in (ord("q"), ord("Q")):
+                return False
+
+            log = db.day_log(self.conn, day)
+            answers = {}
+            for key, question, _hint in questions_for(day):
+                existing = log.did if key == "did" else log.not_done
+                got = prompt(self.stdscr, question.lower(), existing,
+                             react=self.answer_react(key))
+                if got is None:
+                    break                  # backed out; the panel comes back
+                answers[key] = got
+            if "did" in answers:
+                db.log_day(self.conn, day, answers["did"] or "nothing",
+                           answers.get("missed", ""))
+
+    @staticmethod
+    def answer_react(key: str):
+        def react(value: str):
+            v = value.strip().lower()
+            if not v:
+                return ("blank is not an answer — write \"nothing\" if that's true"
+                        if key == "did" else
+                        "blank means there was nothing you missed"), C_DIM
+            if v in ("nothing", "none", "-"):
+                return "recorded as a real answer, and it will show", C_WARN
+            return ("that is what the day was for" if key == "did"
+                    else "written down is better than carried"), C_DONE
+        return react
+
     def run(self):
         curses.curs_set(0)
         self.stdscr.keypad(True)
+        if not self.locked_out():
+            return
         while True:
             self.draw()
             # Only spin when something on screen is moving; otherwise block,

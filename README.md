@@ -234,8 +234,15 @@ space-cli day           # read the answers back
 - No streaks, no score, no guilt — the numbers already do that job honestly.
 
 A notification fires at **00:00** (`SPACE_REVIEW_AT` to change it) if the day
-is still unanswered, and clicking it opens the review. If you miss it, the
-board says so the next time you open it. Neither one blocks you.
+is still unanswered, and clicking it opens the review. It keeps checking until
+the window closes, speaking only while the screen is unlocked, so it catches
+you when you come back rather than buzzing at nobody.
+
+**The board is locked while the answer is owed.** Open `space` between
+midnight and 04:00 with the day unanswered and you get the questions, not the
+board — escaping puts the lock back, and `q` quits. Outside that window
+nothing is owed and nothing is demanded: a board that asked you about a day
+you were still living would only teach you to type anything to get in.
 
 **Sundays** add three more questions, where a week of data makes the answers
 real: what actually moved, what you kept avoiding (the tool already knows —

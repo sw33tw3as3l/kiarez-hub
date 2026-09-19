@@ -196,6 +196,20 @@ def pending(conn, day: str | None = None) -> bool:
     return is_sunday(day) and not db.week_log(conn, day).answered
 
 
+def owed(conn) -> str | None:
+    """The day whose question is due right now, or None.
+
+    Due means asked and still answerable: between midnight and the 04:00
+    close, when `review_day()` is the day that just ended. Today's question is
+    not owed at ten in the morning — the day is not over — so nothing is due
+    then and nothing should be demanded.
+    """
+    day = review_day()
+    if day == date.today().isoformat():
+        return None                       # still living the day being asked about
+    return day if not db.day_log(conn, day).answered else None
+
+
 def is_sunday(day: str) -> bool:
     return date.fromisoformat(day).weekday() == 6
 
