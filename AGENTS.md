@@ -11,7 +11,8 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
 - `space/text.py` — measuring text in terminal columns. Imports nothing, so
   the CLI can use it too. Every layout decision goes through `cols`/`fit`/
   `pad`/`ellipsis`; `len()` is not a width.
-- `space/theme.py` — the palette. `init()` writes real RGB into colour slots
+- `space/theme.py` — the palette (Edgerunners: yellow signature, magenta
+  motion, cyan structure, `#ff003c` cost). `init()` writes real RGB into colour slots
   when `can_change_color()`, else falls back to ANSI. All `C_*` pair ids live
   here; `ui.py` re-exports them.
 - `space/fx.py` — animation and texture: boot glitch, sweeps, eighth-block

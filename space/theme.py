@@ -12,29 +12,32 @@ import curses
 import os
 
 # --- the palette ------------------------------------------------------------
-# Hot magenta and electric cyan carry the chrome; mint is success, amber is
-# work in progress, red is what it costs you. Slate is everything else, and
-# there is a lot of everything else — neon only works against quiet.
+# Edgerunners: acid yellow carries everything, magenta is motion, cyan is
+# structure, and the red is the one that costs you something. Almost all of
+# the screen is slate on near-black, because that yellow only reads as neon
+# when there is very little else competing with it.
 
 HEX = {
-    "magenta": "#ff2d78",
-    "cyan":    "#22e0ff",
-    "mint":    "#2bffb0",
-    "amber":   "#ffb020",
-    "violet":  "#a06cff",
-    "red":     "#ff3355",
-    "ghost":   "#cfc9e8",
-    "slate":   "#6a6480",
-    "deep":    "#1a1626",
-    "ink":     "#0d0b14",
+    "yellow":  "#fcee0a",     # the signature — chrome, carets, selection
+    "magenta": "#ff2bd6",     # in motion
+    "cyan":    "#00f0ff",     # structure
+    "mint":    "#00ffa3",     # shipped
+    "red":     "#ff003c",     # what it cost
+    "amber":   "#ff9f1c",
+    "violet":  "#9a4dff",
+    "ghost":   "#e8e4f0",
+    "slate":   "#5c5470",
+    "deep":    "#14121c",
+    "ink":     "#08070c",
 }
 
 FALLBACK = {
-    "magenta": curses.COLOR_MAGENTA, "cyan": curses.COLOR_CYAN,
-    "mint": curses.COLOR_GREEN, "amber": curses.COLOR_YELLOW,
-    "violet": curses.COLOR_MAGENTA, "red": curses.COLOR_RED,
-    "ghost": curses.COLOR_WHITE, "slate": curses.COLOR_WHITE,
-    "deep": curses.COLOR_BLACK, "ink": curses.COLOR_BLACK,
+    "yellow": curses.COLOR_YELLOW, "magenta": curses.COLOR_MAGENTA,
+    "cyan": curses.COLOR_CYAN, "mint": curses.COLOR_GREEN,
+    "red": curses.COLOR_RED, "amber": curses.COLOR_YELLOW,
+    "violet": curses.COLOR_MAGENTA, "ghost": curses.COLOR_WHITE,
+    "slate": curses.COLOR_WHITE, "deep": curses.COLOR_BLACK,
+    "ink": curses.COLOR_BLACK,
 }
 
 FIRST_SLOT = 24          # leave the 16 ANSI colours and a little room alone
@@ -46,13 +49,13 @@ _slots: dict[str, int] = {}
 
 PAIRS = [
     (C_DIM,     "slate",   None),
-    (C_ACCENT,  "cyan",    None),
+    (C_ACCENT,  "yellow",  None),     # the signature colour does the pointing
     (C_DONE,    "mint",    None),
-    (C_DOING,   "amber",   None),
-    (C_SEL,     "ink",     "cyan"),
+    (C_DOING,   "magenta", None),     # work in motion runs hot
+    (C_SEL,     "ink",     "yellow"),
     (C_WARN,    "red",     None),
     (C_HEAD,    "cyan",    None),
-    (C_NEON,    "magenta", None),
+    (C_NEON,    "yellow",  None),
     (C_FRAME,   "violet",  None),
     (C_GHOST,   "ghost",   None),
     (C_SEL_ALT, "ink",     "magenta"),

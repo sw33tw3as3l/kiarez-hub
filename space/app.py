@@ -29,6 +29,11 @@ from .ui import (
 VIEWS = [("today", "Today"), ("calendar", "Calendar"), ("inbox", "Inbox"),
          ("tree", "Tree"), ("review", "Review")]
 
+# A quiet second label on each view. Decoration, but decoration that still
+# says which screen you are on.
+TAGS = {"today": "今日", "calendar": "暦", "inbox": "受信",
+        "tree": "系統", "review": "反省"}
+
 STATUS_COLOR = {"todo": C_DIM, "doing": C_DOING, "done": C_DONE}
 
 # Watchlist colours, as chosen per app. Red is time spent against you and is
@@ -218,6 +223,9 @@ class App:
             put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
         if room >= 20 + len(self.greeting) and not self.filter:
             put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
+        tag = TAGS.get(self.view, "")
+        if tag and room >= 26 + len(self.greeting) and not self.filter:
+            put(self.stdscr, 0, 22 + len(self.greeting), tag, attr(C_DOING))
         if self.filter and room >= 14:
             put(self.stdscr, 0, min(20, max(3, room - 12)),
                 ellipsis(f"/{self.filter}", 18), attr(C_SEL_ALT, True))
@@ -240,10 +248,14 @@ class App:
 
         # The rule burns under the live view and fades away from it. On a
         # view change it tears for a couple of frames, then settles.
-        rule = "─" * (w - 3)
+        # The rule goes to hazard stripes once the day has cost you an hour.
+        # It is the one piece of chrome that changes meaning during the day.
+        burned = db.usage_total(self.conn, self.day, color="red") >= 3600
+        rule = fx.hazard(w - 3, int(time.monotonic()) % 3) if burned \
+            else "─" * (w - 3)
         if time.monotonic() < self.glitch_until:
             rule = fx.glitched(rule, 0.35)
-        put(self.stdscr, 1, 1, rule, attr(C_FRAME))
+        put(self.stdscr, 1, 1, rule, attr(C_WARN if burned else C_FRAME))
         put(self.stdscr, 1, 1, "━" * 18, attr(C_NEON))
         put(self.stdscr, 1, 19, "╸", attr(C_ACCENT))
 
@@ -470,7 +482,7 @@ class App:
     def draw_inbox(self, top, height, w):
         items = self.inbox()
         put(self.stdscr, top - 1, 2,
-            f"Inbox ({len(items)}) — captured, not yet on a day", attr(C_HEAD, True))
+            f"INBOX 受信  {len(items)} — captured, not yet on a day", attr(C_HEAD, True))
         if not items:
             put(self.stdscr, top + 1, 2, "empty — press c to capture a thought",
                 attr(C_DIM))
@@ -503,7 +515,7 @@ class App:
         items = self.visible_nodes()
         t = self.tree
         put(self.stdscr, top - 1, 2,
-            f"Tree ({len(t.nodes)}) — leaves are goals, branches are areas, "
+            f"TREE 系統  {len(t.nodes)} — leaves are goals, branches are areas, "
             f"nothing ever closes", attr(C_HEAD, True))
         if not items:
             put(self.stdscr, top + 1, 2,
@@ -560,7 +572,7 @@ class App:
             attr(C_DIM))
 
     def draw_review(self, top, height, w):
-        put(self.stdscr, top - 1, 2, "Review — what the board would rather you didn't see",
+        put(self.stdscr, top - 1, 2, "REVIEW 反省 — what the board would rather you didn't see",
             attr(C_HEAD, True))
         y = top
 

@@ -12,12 +12,14 @@ import random
 import time
 
 from .theme import (
-    C_ACCENT, C_DIM, C_FRAME, C_GHOST, C_NEON, C_VIOLET, fx_enabled,
+    C_ACCENT, C_DIM, C_DOING, C_FRAME, C_GHOST, C_HEAD, C_NEON, C_VIOLET,
+    fx_enabled,
 )
 
 BLOCKS = " ▏▎▍▌▋▊▉█"          # eighths, for sub-character bar precision
 GLITCH = "▓▒░█▄▀▌▐■◼◤◢╱╲#%&@$"
 SCAN = "─━"
+HAZARD = "╱"                   # the diagonal stripe, for when it matters
 
 BANNER = [
     "╦╔═╦╔═╗╦═╗╔═╗╔═╗   ╔═╗╔═╗╔═╗╔═╗╔═╗",
@@ -73,8 +75,17 @@ def _abort(stdscr) -> bool:
         stdscr.nodelay(False)
 
 
+def hazard(width: int, phase: int = 0) -> str:
+    """A run of diagonal stripes, offset by phase so it can appear to travel."""
+    return "".join(HAZARD if (i + phase) % 3 else " " for i in range(max(0, width)))
+
+
 def boot(stdscr, subtitle: str = "") -> None:
-    """The title resolving out of noise. Roughly half a second, skippable."""
+    """The title resolving out of noise, split into its colour channels.
+
+    The channels pull apart and settle — the chromatic tear everything in
+    this world is drawn with. Roughly half a second, and any key skips it.
+    """
     if not fx_enabled():
         return
     from .ui import put                     # imported late: ui imports fx
@@ -85,22 +96,30 @@ def boot(stdscr, subtitle: str = "") -> None:
     top = max(1, h // 2 - 4)
     left = max(2, (w - len(BANNER[0])) // 2)
 
-    for step in range(9):
-        amount = max(0.0, 0.75 - step * 0.1)
+    for step in range(11):
+        amount = max(0.0, 0.8 - step * 0.09)
+        split = max(0, 3 - step // 3)       # the channels converge as it settles
         stdscr.erase()
         for i, line in enumerate(BANNER):
-            color = C_NEON if i % 2 == 0 else C_ACCENT
-            put(stdscr, top + i, left, glitched(line, amount),
-                curses.color_pair(color) | curses.A_BOLD)
-        rule = SCAN[step % 2] * min(w - 8, len(BANNER[0]))
-        put(stdscr, top + len(BANNER), left, rule, curses.color_pair(C_FRAME))
-        if step > 4 and subtitle:
+            noisy = glitched(line, amount)
+            if split:
+                put(stdscr, top + i, max(0, left - split), noisy,
+                    curses.color_pair(C_DOING))          # magenta channel
+                put(stdscr, top + i, left + split, noisy,
+                    curses.color_pair(C_HEAD))           # cyan channel
+            put(stdscr, top + i, left, noisy,
+                curses.color_pair(C_NEON) | curses.A_BOLD)
+        width = min(w - 8, len(BANNER[0]))
+        put(stdscr, top + len(BANNER), left,
+            hazard(width, step) if step % 2 else SCAN[1] * width,
+            curses.color_pair(C_ACCENT if step % 2 else C_FRAME))
+        if step > 5 and subtitle:
             put(stdscr, top + len(BANNER) + 2, left,
                 glitched(subtitle, amount), curses.color_pair(C_DIM))
         stdscr.refresh()
         if _abort(stdscr):
             return
-        curses.napms(45)
+        curses.napms(40)
 
 
 def sweep(stdscr, y: int, x: int, text: str, base: int, hot: int,

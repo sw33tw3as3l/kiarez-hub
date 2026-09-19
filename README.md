@@ -5,11 +5,17 @@ A task board in your terminal, built around one question: **was today real?**
 Python standard library only — `curses`, `sqlite3`. Nothing to install, no
 server, no browser, no network.
 
-Neon on a dark ground: hot magenta and electric cyan carry the chrome, mint
-is success, amber is work in progress, red is what it costs you. In a
-terminal that allows it (kitty does) the exact hex values are written into
-colour slots rather than approximated. Effects are short and skippable —
-`SPACE_NO_FX=1` turns every animation off.
+Edgerunners on a near-black ground: acid yellow (`#fcee0a`) carries the
+chrome, magenta is anything in motion, cyan is structure, mint is shipped,
+and `#ff003c` is what the day cost you. Most of the screen stays slate,
+because that yellow only reads as neon when almost nothing competes with it.
+In a terminal that allows it (kitty does) the exact hex values are written
+into colour slots rather than approximated.
+
+The title boots by pulling apart into its colour channels and settling, the
+rule under the header turns to hazard stripes once a red app has taken an
+hour of your day, and each view carries a quiet second name — 今日, 暦, 受信,
+系統, 反省. Effects are short and skippable; `SPACE_NO_FX=1` turns them off.
 
 ```bash
 space           # the board
