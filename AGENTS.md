@@ -49,6 +49,10 @@ Rules that matter:
   any node. `move_node()` refuses cycles; deleting cascades to the subtree and
   nulls the tasks' `node_id`.
 - Ship vs Support is on every task and drives the day strip and Review.
+- The estimate field is `kind="duration"`: chips plus free typing. A typed
+  length is parsed live, canonicalised by `duration_key()`, and registered on
+  save by `App.register_estimate()` — a one-off with no minutes behind it
+  would be invisible to the accuracy table.
 - **The estimate scale is data.** It lives in the `estimates` table and
   `db.connect()` installs it via `model.load_scale()`, which mutates
   `ESTIMATES`/`ESTIMATE_KEYS`/`ESTIMATE_LABELS`/`ESTIMATE_MINUTES` **in place** —

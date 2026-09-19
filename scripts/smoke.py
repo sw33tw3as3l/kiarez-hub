@@ -181,6 +181,20 @@ def check_outcomes(failures: list) -> None:
                                       + datetime.timedelta(days=1)).isoformat(),
                f"day={row['day'] if row else None}")
 
+        # A length typed into the estimate field must become a real size.
+        db = f"{tmp}/outcome-duration.db"
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True,
+                       env=dict(os.environ, KIAREZ_SPACE_DB=db))
+        keys = ("n" + "Typed size" + "\r\r" + "done" + "\r" + ARROW + "\r"
+                + "1h45" + "\r" + "go" + "\r" + "\x13")
+        conn = board(db, keys)
+        row = conn.execute("select estimate from tasks").fetchone()
+        scale = {r["key"]: r["minutes"] for r in conn.execute("select * from estimates")}
+        expect("a typed duration becomes the estimate",
+               row and row["estimate"] == "1h45" and scale.get("1h45") == 105,
+               f"estimate={row['estimate'] if row else None} scale_has={scale.get('1h45')}")
+
         # g must actually move the board to the day it names.
         db = f"{tmp}/outcome-goto.db"
         env = dict(os.environ, KIAREZ_SPACE_DB=db)

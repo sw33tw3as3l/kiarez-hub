@@ -13,7 +13,8 @@ from .review import questions_for, review_day
 from .model import (
     ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS, KIND_LABELS,
     NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start,
-    estimate_accuracy, estimate_hint, fmt_minutes, ship_ratio, today,
+    estimate_accuracy, estimate_hint, fmt_minutes, parse_duration, ship_ratio,
+    today,
 )
 from . import fx
 from .theme import fx_enabled  # noqa: F401
@@ -777,10 +778,22 @@ class App:
             self.message_at = time.monotonic()
             self.message = "captured to inbox"
 
+    def register_estimate(self, key: str | None) -> None:
+        """A length typed into the form joins the scale.
+
+        Otherwise a one-off "1h45" would have no minutes behind it, and the
+        accuracy table could never say anything about it.
+        """
+        if not key or key in ESTIMATE_MINUTES:
+            return
+        minutes = parse_duration(key)
+        if minutes:
+            db.add_estimate(self.conn, key, key, minutes)
+
     def estimate_hint(self, value: str) -> str:
         """What the size under the cursor has actually cost you before."""
         if not value:
-            return "← → to pick — the tool checks this against what it took"
+            return "← → to pick, or type a length — 45m, 1h30, 2d"
         learned = estimate_hint(estimate_accuracy(db.tasks(self.conn)), value)
         return learned or f"no finished {ESTIMATE_LABELS[value]} tasks yet to compare against"
 
@@ -816,6 +829,7 @@ class App:
                         fields, validate)
         if vals is None:
             return
+        self.register_estimate(vals.get("estimate"))
         if task:
             db.update_task(self.conn, task.id, **vals)
             self.message_at = time.monotonic()

@@ -86,8 +86,13 @@ def parse_duration(text: str) -> int | None:
     return total or None
 
 
-def duration_label(minutes: int) -> str:
-    return fmt_minutes(minutes)
+def duration_key(minutes: int) -> str:
+    """The canonical short name for a length: 105 -> "1h45", 45 -> "45m"."""
+    if minutes % 60 == 0 and minutes >= 60:
+        return f"{minutes // 60}h"
+    if minutes < 60:
+        return f"{minutes}m"
+    return f"{minutes // 60}h{minutes % 60:02d}"
 
 # A task left in Doing overnight is not fourteen hours of work, it is a task
 # you forgot to stop. One unbroken stretch counts at most this long, so a

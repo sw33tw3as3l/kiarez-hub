@@ -110,6 +110,16 @@ check("a custom size can be stored on a task", lambda: (
                     estimate="7h", outcome="x", next_action="y")))[1],
     "the estimate column still refuses custom values"))
 
+from space.model import duration_key                       # noqa: E402
+
+check("duration keys read back the way they were typed", lambda: (
+    [duration_key(m) for m in (45, 60, 90, 105, 240, 480)]
+    == ["45m", "1h", "1h30", "1h45", "4h", "8h"], "a key came out wrong"))
+
+check("typing and parsing round-trip", lambda: (
+    all(parse_duration(duration_key(m)) == m
+        for m in (5, 45, 60, 90, 105, 195, 240, 480)), "a length did not survive"))
+
 # --- the estimate clock -------------------------------------------------------
 from datetime import timedelta                            # noqa: E402
 from space.model import (MAX_DOING_STRETCH, estimate_accuracy,               # noqa: E402

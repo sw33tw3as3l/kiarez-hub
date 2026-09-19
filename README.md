@@ -96,6 +96,12 @@ The form tells you this while you are choosing, which is the only moment it
 can change anything: standing on "1h" reads *your 1h tasks actually take
 1h37 (1.6×, optimistic, n=5)*.
 
+You are not held to the scale either. On the Estimate field you can **just
+type a length** — `45m`, `1h30`, `2d` — and it reads back what it understood
+as you go (`1h45▮ → 1h45`). Anything you type joins the scale, in its proper
+place by length, so the next task offers it as a chip and the accuracy table
+can report on it.
+
 The scale itself is yours. It lives in the database, not in the code:
 
 ```bash

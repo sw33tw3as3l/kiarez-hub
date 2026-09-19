@@ -8,7 +8,7 @@ import termios
 from dataclasses import dataclass
 
 from . import fx
-from .model import ESTIMATES, KINDS
+from .model import ESTIMATES, KINDS, duration_key, parse_duration
 from .text import cols, ellipsis, fit, pad, wrap          # noqa: F401
 from .theme import (                                        # noqa: F401
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
@@ -93,6 +93,7 @@ class Field:
     choices: list[tuple[str, str]] | None = None   # (value, label)
     value: str = ""
     hint: str | object = ""          # str, or a callable taking the value
+    typed: str = ""                  # duration fields: what is being typed
 
     @property
     def hint_text(self) -> str:
@@ -102,17 +103,23 @@ class Field:
 
     @property
     def display(self) -> str:
-        if self.kind == "choice":
+        if self.kind in ("choice", "duration"):
             table = dict(self.choices or [])
             return table.get(self.value, "— none —" if not self.value else self.value)
         return self.value or ""
 
 
 def estimate_field(value: str = "", hint=None) -> Field:
-    return Field("estimate", "Estimate", "choice", required=True,
+    """Chips for the usual sizes, and free typing for everything else.
+
+    A fixed scale is a guess about how your work divides up. Picking is fast
+    for the common case; typing "1h45" covers the rest without making you go
+    and edit a list first.
+    """
+    return Field("estimate", "Estimate", "duration", required=True,
                  choices=[(k, label) for k, label, _ in ESTIMATES], value=value,
                  hint=hint or
-                 "← → to pick — the tool compares this against actual time")
+                 "← → to pick, or just type a length: 45m, 1h30, 2d")
 
 
 def kind_field(value: str = "") -> Field:
@@ -160,7 +167,13 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
                 attr(C_ACCENT if selected else C_DIM, selected))
 
             room = width - (value_x - left) - 4
-            if field.kind == "choice" and field.choices:
+            if field.kind == "duration" and field.typed:
+                minutes = parse_duration(field.typed)
+                reading = (f"{field.typed}▮   → {duration_key(minutes)}"
+                           if minutes else f"{field.typed}▮   (keep going)")
+                put(stdscr, y, value_x, pad(ellipsis(reading, room), room),
+                    attr(C_NEON if minutes else C_DIM, bool(minutes)))
+            elif field.kind in ("choice", "duration") and field.choices:
                 # Every option on the row, the current one lit. Far clearer
                 # than a single value you have to arrow through blind.
                 x = value_x
@@ -254,7 +267,25 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             idx = (idx + 1) % len(fields)
         elif ch == curses.KEY_UP:
             idx = (idx - 1) % len(fields)
-        elif ch in (curses.KEY_LEFT, curses.KEY_RIGHT) and f.kind == "choice":
+        elif f.kind == "duration" and (
+                chr(ch).isdigit() if 32 <= ch < 127 else False):
+            f.typed += chr(ch)                 # a digit starts a typed length
+        elif f.kind == "duration" and f.typed and 32 <= ch < 127 and \
+                chr(ch).lower() in "dhm":
+            f.typed += chr(ch).lower()
+        elif f.kind == "duration" and f.typed and ch in (
+                curses.KEY_BACKSPACE, 127, 8):
+            f.typed = f.typed[:-1]
+        elif f.kind == "duration" and f.typed and ch in (
+                curses.KEY_ENTER, 10, 13):
+            minutes = parse_duration(f.typed)
+            if minutes:
+                f.value = duration_key(minutes)
+                f.typed = ""
+                idx = min(idx + 1, len(fields) - 1)
+        elif ch in (curses.KEY_LEFT, curses.KEY_RIGHT) and f.kind in (
+                "choice", "duration"):
+            f.typed = ""
             opts = [v for v, _ in (f.choices or [])]
             if opts:
                 step = 1 if ch == curses.KEY_RIGHT else -1
@@ -267,7 +298,7 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
                 if not f.value and f.choices:
                     f.value = f.choices[0][0]
                 idx = min(idx + 1, len(fields) - 1)
-        elif 32 <= ch < 127 and f.kind == "choice" and f.choices:
+        elif 32 <= ch < 127 and f.kind in ("choice", "duration") and f.choices:
             letter = chr(ch).lower()
             match = next((v for v, text in f.choices
                           if text.lower().startswith(letter)), None)
