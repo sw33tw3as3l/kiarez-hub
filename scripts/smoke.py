@@ -37,6 +37,7 @@ JOURNEYS = [
     ("help", "?x"),
     ("go to a date", "g" + "+3" + "\r" + "g" + "-2" + "\r" + "t"),
     ("filter", "/" + "a" + "\r" + "/" + "\r"),
+    ("scope to a branch", "4f" + "1" + "F"),
     ("new task from the inbox", "3n\x1b"),
     ("review", "5jk"),
 ]

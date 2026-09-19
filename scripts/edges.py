@@ -170,6 +170,48 @@ check("pad reaches the column width exactly", lambda: (
 check("zero-width characters cost nothing", lambda: (
     cols("a\u200cb") == 2 and cols("e\u0301") == 1, "combining marks counted"))
 
+# --- a backup you cannot restore is decoration --------------------------------
+import pathlib as _path, subprocess as _sub, tempfile as _tmp        # noqa: E402
+
+def round_trip():
+    repo = str(_path.Path(__file__).resolve().parent.parent)
+    src = os.path.join(_tmp.mkdtemp(), "src.db")
+    dst = os.path.join(_tmp.mkdtemp(), "dst.db")
+    env = dict(os.environ, KIAREZ_SPACE_DB=src)
+
+    s = db.connect(src)
+    n = db.add_node(s, "Area")
+    db.capture(s, "carried over", node_id=n, day=today(), kind="ship",
+               estimate="1h", outcome="x", next_action="y")
+    db.log_day(s, today(), "did it", "missed it")
+    db.log_week(s, today(), "moved", "avoided", "changed")
+    db.add_estimate(s, "45m", "45m", 45)
+    db.set_watch(s, "code", "Editor", "green")
+    db.add_usage(s, today(), "org.telegram.desktop", 600, opens=3, hour=14)
+    s.close()
+
+    dump = _sub.run([f"{repo}/bin/space-cli", "--plain", "export"],
+                    capture_output=True, text=True, env=env).stdout
+    _sub.run([f"{repo}/bin/space-cli", "--plain", "import", "-"],
+             input=dump, capture_output=True, text=True,
+             env=dict(os.environ, KIAREZ_SPACE_DB=dst))
+
+    back = db.connect(dst)
+    day = db.day_log(back, today())
+    return (
+        [x.name for x in db.nodes(back)] == ["Area"]
+        and [t.title for t in db.tasks(back)] == ["carried over"]
+        and (day.did, day.not_done) == ("did it", "missed it")
+        and db.week_log(back, today()).moved == "moved"
+        and "45m" in dict((k, m) for k, _, m in db.estimate_scale(back))
+        and "Editor" in [l for _, l, _ in db.watchlist(back)]
+        and db.usage_detail(back, "org.telegram.desktop", today())["seconds"] == 600
+        and db.usage_detail(back, "org.telegram.desktop", today())["hours"] == {14: 600}
+    )
+
+check("an export restores everything it claims", lambda: (
+    round_trip(), "something did not survive the round trip"))
+
 print("\n" + (f"{len(fails)} FAILURE(S)" if fails else "all edges clean"))
 for f in fails:
     print(" -", f)

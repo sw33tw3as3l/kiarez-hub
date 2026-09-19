@@ -18,3 +18,4 @@ ls -1t "$dest"/board-*.json 2>/dev/null | tail -n +21 | xargs -r rm --
 ls -1t "$dest"/data-*.db    2>/dev/null | tail -n +21 | xargs -r rm --
 
 echo "backed up to $dest/board-$stamp.json"
+echo "restore with: space-cli import $dest/board-$stamp.json"

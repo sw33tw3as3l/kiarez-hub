@@ -130,6 +130,7 @@ that already carry it; those show up under the listing rather than vanishing.
 | `1`–`5`, `Tab` | switch view |
 | `c` | capture — one line, no fields, from anywhere |
 | `/` | filter the board; the panel counts matches as you type, empty clears |
+| `f` `F` | in Tree: scope the whole board to that branch / clear the scope |
 | `j` `k` `h` `l` | move · `J` `K` reorder |
 | `space` | advance status — refuses to start an undefined task |
 | `e`, `Enter` | define / edit |
@@ -287,5 +288,12 @@ without raising anything.
 `~/.kiarez-space/data.db`, or wherever `KIAREZ_SPACE_DB` points.
 
 ```bash
-./scripts/backup.sh     # timestamped JSON + db copy, keeps the last 20
+./scripts/backup.sh                    # timestamped JSON + db copy, keeps 20
+space-cli export > board.json          # everything, in one file
+space-cli import board.json            # and back again
 ```
+
+The export holds the tree, the tasks, both daily answers, the weekly reviews,
+your estimate scale, the watchlist and every hour of focus history. Importing
+replaces rows by key and leaves anything else alone, so it restores into an
+empty database or merges into a live one.

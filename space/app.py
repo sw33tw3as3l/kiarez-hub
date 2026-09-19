@@ -45,6 +45,7 @@ HELP = [
     ("1-5 / Tab", "switch view"),
     ("c", "capture — one line, no fields, from any view"),
     ("/", "filter the board · empty clears it"),
+    ("f / F", "in Tree: scope the board to that branch / clear the scope"),
     ("j k / h l", "move · J K reorder"),
     ("space", "advance status — refuses to start an undefined task"),
     ("e / Enter", "define or edit"),
@@ -73,6 +74,7 @@ class App:
         self.message_at = 0.0
         self.glitch_until = 0.0
         self.filter = ""
+        self.node_filter: str | None = None
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
@@ -127,8 +129,18 @@ class App:
     def matches(self, text: str) -> bool:
         return not self.filter or self.filter in (text or "").lower()
 
+    def scope_ids(self) -> set[str] | None:
+        """The node ids the board is scoped to, or None for all of them."""
+        if not self.node_filter:
+            return None
+        t = self.tree
+        return {self.node_filter} | {d.id for d in t.descendants(self.node_filter)}
+
     def keep(self, tasks):
-        """Apply the active filter — title, outcome and next action all count."""
+        """Apply the active filters: the text one, and the branch one."""
+        ids = self.scope_ids()
+        if ids is not None:
+            tasks = [t for t in tasks if t.node_id in ids]
         if not self.filter:
             return tasks
         return [t for t in tasks
@@ -221,14 +233,21 @@ class App:
         if room >= 18:
             put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
             put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
-        if room >= 20 + len(self.greeting) and not self.filter:
+        if room >= 20 + len(self.greeting) and not (self.filter or self.node_filter):
             put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
         tag = TAGS.get(self.view, "")
-        if tag and room >= 26 + len(self.greeting) and not self.filter:
+        if tag and room >= 26 + len(self.greeting) and not (
+                self.filter or self.node_filter):
             put(self.stdscr, 0, 22 + len(self.greeting), tag, attr(C_DOING))
-        if self.filter and room >= 14:
+        scope = ""
+        if self.node_filter:
+            scope = "▣ " + (db.node_paths(self.conn).get(self.node_filter, "?")
+                            .split(" › ")[-1])
+        if self.filter:
+            scope = (scope + " " if scope else "") + f"/{self.filter}"
+        if scope and room >= 14:
             put(self.stdscr, 0, min(20, max(3, room - 12)),
-                ellipsis(f"/{self.filter}", 18), attr(C_SEL_ALT, True))
+                ellipsis(scope, 26), attr(C_SEL_ALT, True))
         put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
         x = w - 4
@@ -568,7 +587,7 @@ class App:
             y += 1
 
         put(self.stdscr, top + height - 2, 2,
-            "a child · A root · e rename · m move · x delete · h/l fold",
+            "a child · A root · e rename · m move · f scope · x delete · h/l fold",
             attr(C_DIM))
 
     def draw_review(self, top, height, w):
@@ -1008,6 +1027,11 @@ class App:
             # having nothing happen is just a key that appears to be broken.
             self.task_form()
             return True
+        if ch == ord("F") and self.node_filter:
+            self.node_filter = None
+            self.message_at = time.monotonic()
+            self.message = "showing everything again"
+            return True
         if ch == ord("/"):
             found = prompt(self.stdscr, "filter", self.filter,
                            react=self.filter_react)
@@ -1160,6 +1184,19 @@ class App:
             name = prompt(self.stdscr, "rename:", node.name)
             if name and name.strip():
                 db.rename_node(self.conn, node.id, name)
+        elif ch == ord("f") and node:
+            # Scope the whole board to this branch. A tree that knows your
+            # structure but cannot filter by it is only a picture of it.
+            if self.node_filter == node.id:
+                self.node_filter = None
+                self.message_at = time.monotonic()
+                self.message = "showing everything again"
+            else:
+                self.node_filter = node.id
+                self.view, self.row = "today", 0
+                self.message_at = time.monotonic()
+                self.message = (f"scoped to {t.path(node.id)} — "
+                                f"f again on it, or F anywhere, to clear")
         elif ch == ord("m") and node:
             self.move_node(node)
         elif ch == ord("x") and node:

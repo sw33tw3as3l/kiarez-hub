@@ -458,12 +458,52 @@ def cmd_stats(conn, a):
     print(f"db      {db.db_path()}")
 
 
+# Every table that holds something you typed or something that was measured.
+# heartbeat is deliberately absent: it says whether the tracker is alive now,
+# which means nothing in a file.
+EXPORT_TABLES = ["nodes", "tasks", "days", "weeks", "estimates", "watchlist",
+                 "app_usage", "app_usage_hours"]
+
+
 def cmd_export(conn, a):
-    json.dump({"nodes": [asdict(x) for x in db.nodes(conn)],
-               "tasks": [asdict(t) for t in db.tasks(conn)],
-               "days": {d: s for d, s in db.logged_days(conn).items()}},
-              sys.stdout, indent=2)
+    """Everything, in a form that `import` can put back."""
+    out = {"format": 1}
+    for table in EXPORT_TABLES:
+        out[table] = [dict(r) for r in conn.execute(f"select * from {table}")]
+    json.dump(out, sys.stdout, indent=2)
     print()
+
+
+def cmd_import(conn, a):
+    """Put an export back. Rows replace by key; nothing else is touched."""
+    raw = json.load(open(a.file)) if a.file != "-" else json.load(sys.stdin)
+    if not isinstance(raw, dict) or "tasks" not in raw:
+        sys.exit("that does not look like a space export")
+    if raw.get("format") != 1:
+        print(f"{WARN}older export — importing what can be read{OFF}",
+              file=sys.stderr)
+
+    counts = {}
+    for table in EXPORT_TABLES:
+        rows = raw.get(table) or []
+        if not rows:
+            continue
+        have = {r["name"] for r in conn.execute(f"pragma table_info({table})")}
+        usable = [{k: v for k, v in row.items() if k in have} for row in rows]
+        cols = sorted({k for row in usable for k in row})
+        if not cols:
+            continue
+        marks = ",".join("?" * len(cols))
+        conn.executemany(
+            f"insert or replace into {table} ({','.join(cols)}) values ({marks})",
+            [[row.get(c) for c in cols] for row in usable])
+        counts[table] = len(usable)
+    conn.commit()
+    for table, n in counts.items():
+        print(f"{table:16} {n}")
+    skipped = [t for t in EXPORT_TABLES if t not in counts]
+    if skipped:
+        print(f"{DIM}nothing to restore for: {', '.join(skipped)}{OFF}")
 
 
 def build_parser():
@@ -578,6 +618,10 @@ def build_parser():
     add("review", help="stale work, estimate accuracy, distraction").set_defaults(fn=cmd_review)
     add("stats", help="counts").set_defaults(fn=cmd_stats)
     add("export", help="dump everything as JSON").set_defaults(fn=cmd_export)
+
+    s = add("import", help="restore an export (rows replace by key)")
+    s.add_argument("file", help="a file written by `space-cli export`, or - for stdin")
+    s.set_defaults(fn=cmd_import)
     return p
 
 
