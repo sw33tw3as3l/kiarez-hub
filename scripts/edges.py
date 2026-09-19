@@ -85,6 +85,31 @@ check("logging an empty answer still marks the day", lambda: (
     (db.log_day(c, today(), "nothing", ""),
      db.day_log(c, today()).answered)[1], "day not marked answered"))
 
+# --- the estimate scale is data, not code -------------------------------------
+from space.model import parse_duration                     # noqa: E402
+
+check("durations parse the way people write them", lambda: (
+    [parse_duration(x) for x in ("45m", "1h", "1h30", "90", "2d", "3h15")]
+    == [45, 60, 90, 90, 960, 195], "a duration parsed wrong"))
+
+check("nonsense durations are refused", lambda: (
+    all(parse_duration(x) is None for x in ("", "banana", "0", "1x")),
+    "nonsense accepted as a duration"))
+
+check("the scale can be extended and shrunk", lambda: (
+    (db.add_estimate(c, "45m", "45m", 45),
+     "45m" in __import__("space.model", fromlist=["x"]).ESTIMATE_KEYS,
+     db.remove_estimate(c, "45m"),
+     "45m" not in __import__("space.model", fromlist=["x"]).ESTIMATE_KEYS)[3],
+    "adding or removing a size did not take effect"))
+
+check("a custom size can be stored on a task", lambda: (
+    (db.add_estimate(c, "7h", "7h", 420),
+     (lambda t: db.task(c, t).estimate == "7h")(
+         db.capture(c, "custom", node_id=root, day=today(), kind="ship",
+                    estimate="7h", outcome="x", next_action="y")))[1],
+    "the estimate column still refuses custom values"))
+
 # --- the estimate clock -------------------------------------------------------
 from datetime import timedelta                            # noqa: E402
 from space.model import (MAX_DOING_STRETCH, estimate_accuracy,               # noqa: E402

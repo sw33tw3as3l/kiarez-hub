@@ -49,6 +49,13 @@ Rules that matter:
   any node. `move_node()` refuses cycles; deleting cascades to the subtree and
   nulls the tasks' `node_id`.
 - Ship vs Support is on every task and drives the day strip and Review.
+- **The estimate scale is data.** It lives in the `estimates` table and
+  `db.connect()` installs it via `model.load_scale()`, which mutates
+  `ESTIMATES`/`ESTIMATE_KEYS`/`ESTIMATE_LABELS`/`ESTIMATE_MINUTES` **in place** —
+  every module did `from .model import ...`, so rebinding would leave them
+  pointing at the old scale. `cli.main()` connects before building the parser
+  for the same reason. Old databases carry a CHECK on `tasks.estimate`;
+  `_free_the_estimate_column()` rebuilds the table once to drop it.
 - **The Doing clock is capped at `MAX_DOING_STRETCH`**, for the same reason the
   focus tracker caps a stretch. `estimate_accuracy()` reports a median per
   size, never a mean over everything; `Field.hint` may be a callable so the

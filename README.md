@@ -96,6 +96,21 @@ The form tells you this while you are choosing, which is the only moment it
 can change anything: standing on "1h" reads *your 1h tasks actually take
 1h37 (1.6×, optimistic, n=5)*.
 
+The scale itself is yours. It lives in the database, not in the code:
+
+```bash
+space-cli estimates                      # the scale, with how it has gone
+space-cli estimates --add 45m
+space-cli estimates --add 1h30 --key long --label "Long one"
+space-cli estimates --add 2d --label "Two days"
+space-cli estimates --remove day_plus
+space-cli estimates --reset
+```
+
+Durations read the way you write them — `45m`, `1h30`, `90`, `2d` — and sizes
+sort by length wherever they appear. Removing a size leaves it on the tasks
+that already carry it; those show up under the listing rather than vanishing.
+
 ## Keys
 
 | Key | Does |

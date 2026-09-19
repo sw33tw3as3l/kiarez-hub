@@ -12,7 +12,10 @@ from pathlib import Path
 
 from datetime import date, timedelta
 
-from .model import Day, Node, Task, Tree, Week, add_days, today, utc_now
+from .model import (
+    DEFAULT_ESTIMATES, Day, Node, Task, Tree, Week, add_days, load_scale,
+    today, utc_now,
+)
 
 SCHEMA = """
 -- A forest. parent_id null means a root. A node with children reads as an
@@ -37,8 +40,7 @@ create table if not exists tasks (
   kind          text check (kind in ('ship','support')),
   outcome       text,
   next_action   text,
-  estimate      text check (estimate in
-                  ('15m','30m','1h','2h','half_day','day_plus')),
+  estimate      text,                      -- a key in the `estimates` table
   doing_seconds integer not null default 0,
   doing_since   text,
   rolls         integer not null default 0,
@@ -96,6 +98,14 @@ create table if not exists app_usage_hours (
   primary key (date, hour, app)
 );
 
+-- The sizes you estimate in. Editable: this is a scale, not a law.
+create table if not exists estimates (
+  key      text primary key,
+  label    text not null,
+  minutes  integer not null,
+  position integer not null default 0
+);
+
 -- The tracker stamps this every flush, so the board can say whether focus
 -- time is actually being recorded rather than quietly assuming it is.
 create table if not exists heartbeat (
@@ -137,11 +147,42 @@ def connect(path=None) -> sqlite3.Connection:
     _guard_old_schema(conn, p)
     conn.executescript(SCHEMA)
     _add_missing_columns(conn)
+    _free_the_estimate_column(conn)
     conn.executemany(
         "insert or ignore into watchlist (app, label, color) values (?,?,?)",
         DEFAULT_WATCHLIST)
+    if not conn.execute("select count(*) from estimates").fetchone()[0]:
+        conn.executemany(
+            "insert into estimates (key, label, minutes, position) values (?,?,?,?)",
+            [(k, label, mins, i)
+             for i, (k, label, mins) in enumerate(DEFAULT_ESTIMATES)])
     conn.commit()
+    load_scale(estimate_scale(conn))
     return conn
+
+
+def _free_the_estimate_column(conn) -> None:
+    """Drop the old CHECK on tasks.estimate so the scale can be edited.
+
+    SQLite cannot drop a constraint, so the table is rebuilt. Only runs once,
+    on a database created before the scale became editable.
+    """
+    row = conn.execute("select sql from sqlite_master where type = 'table' "
+                       "and name = 'tasks'").fetchone()
+    if not row or "check (estimate in" not in (row["sql"] or ""):
+        return
+    cols = [r["name"] for r in conn.execute("pragma table_info(tasks)")]
+    names = ",".join(cols)
+    # executescript commits on its own, so the rebuild is written as plain
+    # statements rather than wrapped in a transaction it would break.
+    conn.execute("pragma foreign_keys = off")
+    conn.execute(f"create table tasks_rebuilt as select {names} from tasks")
+    conn.execute("drop table tasks")
+    conn.executescript(SCHEMA)                       # recreates it, unconstrained
+    conn.execute(f"insert into tasks ({names}) select {names} from tasks_rebuilt")
+    conn.execute("drop table tasks_rebuilt")
+    conn.commit()
+    conn.execute("pragma foreign_keys = on")
 
 
 def _add_missing_columns(conn) -> None:
@@ -473,6 +514,44 @@ def add_usage(conn, date_str: str, app: str, seconds: int, *, opens: int = 0,
                  set seconds = seconds + excluded.seconds""",
             (date_str, int(hour), app, int(seconds)))
     conn.commit()
+
+
+def estimate_scale(conn) -> list[tuple[str, str, int]]:
+    return [(r["key"], r["label"], r["minutes"]) for r in
+            conn.execute("select key, label, minutes from estimates "
+                         "order by minutes, position")]
+
+
+def add_estimate(conn, key: str, label: str, minutes: int) -> None:
+    pos = conn.execute("select coalesce(max(position), -1) + 1 p "
+                       "from estimates").fetchone()["p"]
+    conn.execute("""insert into estimates (key, label, minutes, position)
+                    values (?,?,?,?)
+                    on conflict(key) do update set label = excluded.label,
+                                                   minutes = excluded.minutes""",
+                 (key, label, int(minutes), pos))
+    conn.commit()
+    load_scale(estimate_scale(conn))
+
+
+def remove_estimate(conn, key: str) -> int:
+    """Removes a size. Returns how many tasks still reference it."""
+    used = conn.execute("select count(*) c from tasks where estimate = ?",
+                        (key,)).fetchone()["c"]
+    conn.execute("delete from estimates where key = ?", (key,))
+    conn.commit()
+    load_scale(estimate_scale(conn))
+    return used
+
+
+def reset_estimates(conn) -> None:
+    conn.execute("delete from estimates")
+    conn.executemany(
+        "insert into estimates (key, label, minutes, position) values (?,?,?,?)",
+        [(k, label, mins, i)
+         for i, (k, label, mins) in enumerate(DEFAULT_ESTIMATES)])
+    conn.commit()
+    load_scale(estimate_scale(conn))
 
 
 def beat(conn, name: str = "track") -> None:

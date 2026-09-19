@@ -25,7 +25,8 @@ from . import db
 from .review import review_day
 from .text import cols, ellipsis, pad
 from .model import (
-    ESTIMATE_MINUTES, estimate_accuracy, ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
+    ESTIMATE_MINUTES, estimate_accuracy, ESTIMATE_KEYS, ESTIMATE_LABELS,
+    KIND_KEYS, KIND_LABELS, NAGGING_ROLLS, parse_duration,
     STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
     ship_ratio, today,
 )
@@ -406,6 +407,42 @@ def cmd_review(conn, a):
         print(f"  {OK}nothing rotting{OFF}")
 
 
+def cmd_estimates(conn, a):
+    """List or edit the sizes you estimate in."""
+    if a.reset:
+        db.reset_estimates(conn)
+        print("scale reset to the defaults")
+    if a.add:
+        minutes = parse_duration(a.add)
+        if not minutes:
+            sys.exit(f"'{a.add}' is not a duration — try 45m, 1h30, 2d")
+        key = a.key or a.add.strip().lower()
+        db.add_estimate(conn, key, a.label or key, minutes)
+        print(f"added {key} = {fmt_minutes(minutes)}")
+    if a.remove:
+        if a.remove not in ESTIMATE_LABELS:
+            sys.exit(f"'{a.remove}' is not in the scale")
+        if len(ESTIMATE_KEYS) <= 1:
+            sys.exit("the scale needs at least one size")
+        used = db.remove_estimate(conn, a.remove)
+        print(f"removed {a.remove}"
+              + (f" — {used} existing task(s) still carry it and keep it"
+                 if used else ""))
+
+    accuracy = estimate_accuracy(db.tasks(conn))
+    for key in ESTIMATE_KEYS:
+        n, actual = accuracy.get(key, (0, 0))
+        planned = ESTIMATE_MINUTES[key]
+        real = (f"  {DIM}actually {fmt_minutes(round(actual))} "
+                f"({actual / planned:.1f}×, n={n}){OFF}") if n >= 2 else ""
+        print(f"{ACC}{key:<10}{OFF} {fmt_minutes(planned):>7}{real}")
+    orphans = {r["estimate"] for r in conn.execute(
+        "select distinct estimate from tasks where estimate is not null")
+        } - set(ESTIMATE_KEYS)
+    for key in sorted(orphans):
+        print(f"{DIM}{key:<10} (no longer in the scale, still on old tasks){OFF}")
+
+
 def cmd_stats(conn, a):
     row = conn.execute("""
         select count(*) total, coalesce(sum(status='done'),0) done,
@@ -471,7 +508,7 @@ def build_parser():
     s.add_argument("--outcome")
     s.add_argument("--next", dest="next_action")
     s.add_argument("--kind", choices=KIND_KEYS)
-    s.add_argument("--estimate", choices=ESTIMATE_KEYS)
+    s.add_argument("--estimate", choices=ESTIMATE_KEYS or None)
     s.set_defaults(fn=cmd_define)
 
     for name, status in (("start", "doing"), ("done", "done"), ("stop", "todo")):
@@ -488,6 +525,14 @@ def build_parser():
     s = add("rm", help="delete a task")
     s.add_argument("id")
     s.set_defaults(fn=cmd_rm)
+
+    s = add("estimates", help="list or edit the sizes you estimate in")
+    s.add_argument("--add", metavar="DURATION", help="45m, 1h30, 2d")
+    s.add_argument("--key", help="short name for --add (defaults to the duration)")
+    s.add_argument("--label", help="how it reads in the form")
+    s.add_argument("--remove", metavar="KEY")
+    s.add_argument("--reset", action="store_true", help="back to the defaults")
+    s.set_defaults(fn=cmd_estimates)
 
     add("tree", help="the whole forest").set_defaults(fn=cmd_tree)
 
@@ -537,10 +582,14 @@ def build_parser():
 
 
 def main(argv=None):
+    # Connect first: the estimate scale lives in the database and the parser
+    # offers it as choices, so building the parser before connecting would
+    # advertise the default scale rather than yours.
+    conn = db.connect()
     args = build_parser().parse_args(argv)
     if getattr(args, "plain", False):
         plain()
-    args.fn(db.connect(), args)
+    args.fn(conn, args)
     return 0
 
 

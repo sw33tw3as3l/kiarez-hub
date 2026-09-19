@@ -28,7 +28,10 @@ KINDS = [("ship", "Ship"), ("support", "Support")]
 KIND_KEYS = [k for k, _ in KINDS]
 KIND_LABELS = dict(KINDS)
 
-ESTIMATES = [
+# The sizes you estimate in. This is a default, not a law: the scale lives in
+# the database and `load_scale` replaces these IN PLACE at connect time, so
+# every module that imported them keeps seeing the current one.
+DEFAULT_ESTIMATES = [
     ("15m", "15m", 15),
     ("30m", "30m", 30),
     ("1h", "1h", 60),
@@ -36,13 +39,55 @@ ESTIMATES = [
     ("half_day", "Half day", 240),
     ("day_plus", "Day+", 480),
 ]
+ESTIMATES = list(DEFAULT_ESTIMATES)
 ESTIMATE_KEYS = [k for k, _, _ in ESTIMATES]
 ESTIMATE_LABELS = {k: label for k, label, _ in ESTIMATES}
 ESTIMATE_MINUTES = {k: mins for k, _, mins in ESTIMATES}
 
 # Bigger than half a day is not one task. It still gets captured, it just
 # shouldn't be dropped onto a single day pretending it will happen.
-OVERSIZED = {"half_day", "day_plus"}
+OVERSIZED_MINUTES = 240
+
+
+def load_scale(rows) -> None:
+    """Install the estimate scale from [(key, label, minutes), ...].
+
+    Mutates the module's containers rather than rebinding them, because every
+    other module did `from .model import ESTIMATE_LABELS` and rebinding would
+    leave them all pointing at the old scale.
+    """
+    rows = list(rows) or list(DEFAULT_ESTIMATES)
+    ESTIMATES[:] = rows
+    ESTIMATE_KEYS[:] = [k for k, _, _ in rows]
+    ESTIMATE_LABELS.clear()
+    ESTIMATE_LABELS.update({k: label for k, label, _ in rows})
+    ESTIMATE_MINUTES.clear()
+    ESTIMATE_MINUTES.update({k: mins for k, _, mins in rows})
+
+
+def parse_duration(text: str) -> int | None:
+    """"45m", "1h", "1h30", "90", "2d" -> minutes. None if unreadable."""
+    text = (text or "").strip().lower().replace(" ", "")
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text) or None
+    total, number = 0, ""
+    for ch in text:
+        if ch.isdigit():
+            number += ch
+        elif ch in "dhm" and number:
+            total += int(number) * {"d": 480, "h": 60, "m": 1}[ch]
+            number = ""
+        else:
+            return None
+    if number:                      # a trailing number after hours means minutes
+        total += int(number)
+    return total or None
+
+
+def duration_label(minutes: int) -> str:
+    return fmt_minutes(minutes)
 
 # A task left in Doing overnight is not fourteen hours of work, it is a task
 # you forgot to stop. One unbroken stretch counts at most this long, so a
@@ -156,7 +201,8 @@ class Task:
 
     @property
     def oversized(self) -> bool:
-        return self.estimate in OVERSIZED
+        return (ESTIMATE_MINUTES.get(self.estimate or "", 0)
+                >= OVERSIZED_MINUTES)
 
     @property
     def running_minutes(self) -> int:
