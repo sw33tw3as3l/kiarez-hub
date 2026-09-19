@@ -169,6 +169,21 @@ check("pad reaches the column width exactly", lambda: (
 check("zero-width characters cost nothing", lambda: (
     cols("a\u200cb") == 2 and cols("e\u0301") == 1, "combining marks counted"))
 
+check("a size removed from the scale does not break its task", lambda: (
+    (lambda: (
+        db.add_estimate(c, "99m", "99m", 99),
+        (lambda t: (
+            db.remove_estimate(c, "99m"),
+            db.task(c, t).estimate == "99m",
+        )[1])(db.capture(c, "orphan size", node_id=root, day=today(),
+                         estimate="99m", outcome="x", next_action="y")),
+    )[1])(), "the task lost its size when the scale did"))
+
+check("the form still describes a retired size", lambda: (
+    (lambda: __import__("space.app", fromlist=["App"]).App.estimate_hint(
+        type("S", (), {"conn": c})(), "99m").endswith("kept for this task"))(),
+    "asking about a retired size raised or said nothing useful"))
+
 # --- a backup you cannot restore is decoration --------------------------------
 import pathlib as _path, subprocess as _sub, tempfile as _tmp        # noqa: E402
 

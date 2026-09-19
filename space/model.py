@@ -225,6 +225,13 @@ class Task:
     def estimate_minutes(self) -> int | None:
         return ESTIMATE_MINUTES.get(self.estimate or "")
 
+    @property
+    def age_days(self) -> int:
+        """How long ago this was captured."""
+        if not self.created_at:
+            return 0
+        return (utc_now() - parse(self.created_at)).days
+
     def stale_days(self) -> int:
         if not self.touched_at:
             return 0

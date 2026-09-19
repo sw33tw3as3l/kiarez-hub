@@ -68,7 +68,9 @@ date — but the Review view knows exactly what you keep pushing.
    finished, distraction minutes, what is running, and your two answers.
 2. **Calendar** — the month. `✓` = you logged something that shipped, `·` =
    you logged nothing. Both are honest answers; a blank day is neither.
-3. **Inbox** — captured, not yet on a day. `s` schedules, `e` defines.
+3. **Inbox** — captured, not yet on a day, each line saying how long it has
+   been sitting there. `s` defines it and puts it on the open day in one go;
+   `e` just defines.
 4. **Tree** — the whole forest, foldable, with counts rolled up.
 5. **Review** — what the board would rather you didn't see: where the last
    seven days went, how far off your estimates are *per size*, and every task

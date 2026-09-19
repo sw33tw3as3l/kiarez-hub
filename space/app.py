@@ -537,11 +537,17 @@ class App:
                 attr(C_SEL, True) if on else attr(C_ACCENT))
             tail = paths.get(t.node_id, "no goal") if t.defined else \
                 "needs " + ", ".join(t.missing)
-            put(self.stdscr, y + 1, 4, ellipsis(tail, w - 8),
+            put(self.stdscr, y + 1, 4, ellipsis(tail, w - 30),
                 attr(C_DIM if t.defined else C_WARN))
+            age = t.age_days
+            if age:
+                note = f"captured {age}d ago"
+                put(self.stdscr, y + 1, max(4, w - cols(note) - 4), note,
+                    attr(C_WARN if age >= 14 else C_DIM))
             y += 2
         put(self.stdscr, top + height - 2, 2,
-            "s puts it on the open day · e defines it · x deletes", attr(C_DIM))
+            "s defines it and puts it on the open day · e defines · x deletes",
+            attr(C_DIM))
 
     def draw_tree(self, top, height, w):
         items = self.visible_nodes()
@@ -851,7 +857,15 @@ class App:
         if not value:
             return "← → to pick, or type a length — 45m, 1h30, 2d"
         learned = estimate_hint(estimate_accuracy(db.tasks(self.conn)), value)
-        return learned or f"no finished {ESTIMATE_LABELS[value]} tasks yet to compare against"
+        if learned:
+            return learned
+        label = ESTIMATE_LABELS.get(value, value)
+        if value not in ESTIMATE_LABELS:
+            # A size this task still carries after it left the scale. Saying so
+            # is better than a bare label, and far better than the KeyError
+            # this used to be.
+            return f"{label} is no longer in the scale — kept for this task"
+        return f"no finished {label} tasks yet to compare against"
 
     def task_form(self, task=None, day=None):
         choices = self.node_choices()
@@ -868,7 +882,8 @@ class App:
                   value=(task.outcome if task else "") or "",
                   hint="how you'll know it's finished"),
             estimate_field((task.estimate if task else "") or "",
-                           hint=self.estimate_hint),
+                           hint=self.estimate_hint,
+                           keep=task.estimate if task else None),
             Field("next_action", "Next action", required=True,
                   value=(task.next_action if task else "") or "",
                   hint="the first physical step, small enough to start now"),
@@ -1136,14 +1151,19 @@ class App:
         elif ch in (ord("e"), curses.KEY_ENTER, 10, 13) and t:
             self.task_form(t)
         elif ch == ord("s") and t:
-            blockers = can_start(t)
-            if blockers:
-                self.message_at = time.monotonic()
-                self.message = "define it first: " + ", ".join(blockers) + " — press e"
-            else:
+            if can_start(t):
+                # Scheduling something undefined is the moment you have to
+                # define it anyway, so do that here instead of bouncing the
+                # user to another key and back.
+                self.task_form(t)
+                t = db.task(self.conn, t.id)
+            if t and not can_start(t):
                 db.schedule(self.conn, t.id, self.day)
                 self.message_at = time.monotonic()
                 self.message = f"scheduled for {self.day}"
+            else:
+                self.message_at = time.monotonic()
+                self.message = "still not defined — it stays in the inbox"
         elif ch == ord("x") and t:
             if confirm(self.stdscr, f"delete '{ellipsis(t.title, 40)}'?"):
                 db.delete(self.conn, "tasks", t.id)

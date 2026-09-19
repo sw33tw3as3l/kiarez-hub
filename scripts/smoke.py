@@ -196,6 +196,24 @@ def check_outcomes(failures: list) -> None:
                row and row["estimate"] == "1h45" and scale.get("1h45") == 105,
                f"estimate={row['estimate'] if row else None} scale_has={scale.get('1h45')}")
 
+        # s on an undefined inbox item defines it and schedules it in one go.
+        db = f"{tmp}/outcome-inbox-s.db"
+        env = dict(os.environ, KIAREZ_SPACE_DB=db)
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True, env=env)
+        subprocess.run([str(REPO / "bin/space-cli"), "c", "from the inbox"],
+                       capture_output=True, env=env)
+        DOWN = "\x1bOB"
+        keys = ("3s" + DOWN + DOWN + "it works" + "\r" + "1h" + "\r"
+                + "first step" + "\r" + "\x13")
+        conn = board(db, keys)
+        row = conn.execute("select day, estimate from tasks").fetchone()
+        import datetime as _d
+        expect("s defines and schedules in one step",
+               row and row["day"] == _d.date.today().isoformat()
+               and row["estimate"] == "1h",
+               f"row={dict(row) if row else None}")
+
         # g must actually move the board to the day it names.
         db = f"{tmp}/outcome-goto.db"
         env = dict(os.environ, KIAREZ_SPACE_DB=db)

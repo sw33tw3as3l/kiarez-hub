@@ -109,15 +109,20 @@ class Field:
         return self.value or ""
 
 
-def estimate_field(value: str = "", hint=None) -> Field:
+def estimate_field(value: str = "", hint=None, keep: str | None = None) -> Field:
     """Chips for the usual sizes, and free typing for everything else.
 
     A fixed scale is a guess about how your work divides up. Picking is fast
     for the common case; typing "1h45" covers the rest without making you go
     and edit a list first.
     """
+    choices = [(k, label) for k, label, _ in ESTIMATES]
+    if keep and keep not in {k for k, _ in choices}:
+        # A size that has left the scale but is still on this task. Offer it,
+        # or editing anything else about the task would quietly change it.
+        choices.append((keep, keep))
     return Field("estimate", "Estimate", "duration", required=True,
-                 choices=[(k, label) for k, label, _ in ESTIMATES], value=value,
+                 choices=choices, value=value,
                  hint=hint or
                  "← → to pick, or just type a length: 45m, 1h30, 2d")
 

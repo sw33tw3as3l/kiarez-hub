@@ -60,6 +60,10 @@ Rules that matter:
   length is parsed live, canonicalised by `duration_key()`, and registered on
   save by `App.register_estimate()` — a one-off with no minutes behind it
   would be invisible to the accuracy table.
+- A size removed from the scale stays on the tasks that carry it. The form
+  offers it back via `estimate_field(keep=...)` so editing anything else about
+  such a task does not silently change its estimate, and `App.estimate_hint`
+  says the size has been retired rather than raising a KeyError on it.
 - **The estimate scale is data.** It lives in the `estimates` table and
   `db.connect()` installs it via `model.load_scale()`, which mutates
   `ESTIMATES`/`ESTIMATE_KEYS`/`ESTIMATE_LABELS`/`ESTIMATE_MINUTES` **in place** —
