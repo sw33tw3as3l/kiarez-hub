@@ -575,6 +575,10 @@ class App:
         put(self.stdscr, top - 1, 2, "REVIEW 反省 — what the board would rather you didn't see",
             attr(C_HEAD, True))
         y = top
+        # Three sections sharing one screen, any of which can be long: a wide
+        # estimate scale, a week of apps, a pile of rotting work. Each is
+        # bounded and says what it hid, rather than running into the rail.
+        limit = top + height - 3
 
         # 1. Where the last seven days actually went.
         put(self.stdscr, y, 2, "Where the last 7 days went", attr(C_ACCENT, True))
@@ -598,7 +602,7 @@ class App:
             put(self.stdscr, y, 4, "nothing recorded — is space-track running?",
                 attr(C_DIM))
             y += 1
-        for row in matrix[:5]:
+        for row in matrix[:max(1, min(5, limit - y - 6))]:
             color = APP_COLOR.get(row["color"], C_DIM)
             bold = row["color"] == "red"
             put(self.stdscr, y, 2, pad(ellipsis(row["label"], 13), 13),
@@ -637,9 +641,11 @@ class App:
                 attr(C_DIM))
             y += 2
         else:
-            for key in ESTIMATE_KEYS:
-                if key not in accuracy:
-                    continue
+            listed = [k for k in ESTIMATE_KEYS if k in accuracy]
+            # Leave at least three rows for whatever needs a decision.
+            room = max(1, limit - y - 4)
+            hidden = max(0, len(listed) - room)
+            for key in listed[:room]:
                 n, actual = accuracy[key]
                 planned = ESTIMATE_MINUTES[key]
                 ratio = actual / planned if planned else 0
@@ -652,10 +658,17 @@ class App:
                 put(self.stdscr, y, 32, bar, attr(color))
                 put(self.stdscr, y, 52, f"n={n}", attr(C_DIM))
                 y += 1
+            if hidden:
+                put(self.stdscr, y, 4,
+                    f"… {hidden} more size{'' if hidden == 1 else 's'} — "
+                    f"space-cli estimates shows them all", attr(C_DIM))
+                y += 1
             y += 1
 
         # 3. What has stopped being work.
         rotting = self.stale()
+        if y >= limit:
+            return                         # no room left; the sections above won
         put(self.stdscr, y, 2, f"Needs a decision ({len(rotting)})", attr(C_ACCENT, True))
         y += 1
         if not rotting:
@@ -663,7 +676,7 @@ class App:
             return
         self.list_row = min(self.list_row, len(rotting) - 1)
         for i, (t, why) in enumerate(rotting):
-            if y >= top + height - 2:
+            if y >= limit:
                 put(self.stdscr, y, 4, f"↓ {len(rotting) - i} more", attr(C_DIM))
                 break
             on = i == self.list_row

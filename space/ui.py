@@ -141,6 +141,17 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
     idx, problems, editing = 0, [], False
     cursor = 0
 
+    def settle(field) -> None:
+        """Commit a typed length. Called before moving on and before saving,
+        so what is on the screen is what gets written — typing 1h45 and
+        tabbing away used to leave the field empty while still showing it."""
+        if field.kind != "duration" or not field.typed:
+            return
+        minutes = parse_duration(field.typed)
+        if minutes:
+            field.value = duration_key(minutes)
+        field.typed = ""
+
     pulse = fx.Pulse(0.9)
     stdscr.timeout(90)
     while True:
@@ -235,6 +246,8 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             stdscr.timeout(-1)
             return None
         if ch in (19, curses.KEY_F2):                  # Ctrl-S / F2
+            for fld in fields:
+                settle(fld)
             values = {f.key: f.value for f in fields}
             problems = validate(values) if validate else []
             if not problems:
@@ -264,8 +277,10 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             continue
 
         if ch in (curses.KEY_DOWN, 9):
+            settle(f)
             idx = (idx + 1) % len(fields)
         elif ch == curses.KEY_UP:
+            settle(f)
             idx = (idx - 1) % len(fields)
         elif f.kind == "duration" and (
                 chr(ch).isdigit() if 32 <= ch < 127 else False):
@@ -278,10 +293,8 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
             f.typed = f.typed[:-1]
         elif f.kind == "duration" and f.typed and ch in (
                 curses.KEY_ENTER, 10, 13):
-            minutes = parse_duration(f.typed)
-            if minutes:
-                f.value = duration_key(minutes)
-                f.typed = ""
+            if parse_duration(f.typed):
+                settle(f)
                 idx = min(idx + 1, len(fields) - 1)
         elif ch in (curses.KEY_LEFT, curses.KEY_RIGHT) and f.kind in (
                 "choice", "duration"):
