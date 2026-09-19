@@ -497,6 +497,20 @@ class App:
             put(self.stdscr, top + 2 + i, 2, f"{label}:", attr(color, True))
             put(self.stdscr, top + 2 + i, 8, ellipsis(text, w - 12), attr(C_DIM))
 
+        # The week that day belongs to, if it was ever reviewed. Three
+        # considered answers a week are worth nothing if you can never read
+        # them back.
+        week = db.week_log(self.conn, iso)
+        if week.answered:
+            put(self.stdscr, top + 4, 2, f"week of {week.week_start}",
+                attr(C_ACCENT, True))
+            for i, (label, text) in enumerate(
+                    [("moved", week.moved), ("avoided", week.avoided),
+                     ("change", week.change)]):
+                put(self.stdscr, top + 5 + i, 2, f"{label}:", attr(C_VIOLET))
+                put(self.stdscr, top + 5 + i, 12, ellipsis(text or "—", w - 16),
+                    attr(C_DIM))
+
     def draw_inbox(self, top, height, w):
         items = self.inbox()
         put(self.stdscr, top - 1, 2,
@@ -1254,30 +1268,49 @@ class App:
 
             h, w = self.stdscr.getmaxyx()
             self.stdscr.erase()
-            width = min(w - 4, 76)
-            left, top = max(1, (w - width) // 2), max(1, h // 2 - 8)
-            frame(self.stdscr, top, left, 13, width, "LOCKED 施錠",
-                  C_WARN, C_WARN)
-
-            when = date.fromisoformat(day).strftime("%A %d %B")
-            put(self.stdscr, top + 2, left + 3,
-                f"{when} is waiting for its answer.", attr(C_GHOST, True))
+            width = max(24, min(w - 4, 76))
 
             items = db.tasks(self.conn, day=day)
             finished, total = done_count(items)
             red = db.usage_total(self.conn, day, color="red") // 60
-            put(self.stdscr, top + 4, left + 3,
-                f"you finished {finished} of {total}", attr(C_DIM))
-            put(self.stdscr, top + 5, left + 3,
-                f"distraction {fmt_minutes(red)}",
-                attr(C_WARN if red else C_DIM))
-            for i, line in enumerate([
-                    "Two questions, about a minute. The board opens after them.",
-                    "It closes for good at 04:00, answered or not.",
-            ]):
-                put(self.stdscr, top + 7 + i, left + 3, line, attr(C_VIOLET))
-            put(self.stdscr, top + 11, left + 3,
-                "any key to answer · q to quit", attr(C_DIM))
+            when = date.fromisoformat(day).strftime("%A %d %B")
+
+            # In priority order. Being locked out of the board with no visible
+            # way to answer is the worst thing this screen can do, so the way
+            # out is drawn first and everything else fills the room left.
+            essential = [(f"{when} is waiting for its answer.", C_GHOST, True)]
+            optional = [
+                ("", C_DIM, False),
+                (f"you finished {finished} of {total}", C_DIM, False),
+                (f"distraction {fmt_minutes(red)}",
+                 C_WARN if red else C_DIM, False),
+                ("", C_DIM, False),
+                ("Two questions, about a minute.", C_VIOLET, False),
+                ("It closes for good at 04:00, answered or not.", C_VIOLET, False),
+            ]
+            # Longest that fits. This line is the only thing on screen that
+            # has to survive, so it gets its own ladder.
+            exit_line = next(
+                (t for t in ("any key to answer · q to quit",
+                             "any key answers · q quits",
+                             "any key · q quits",
+                             "q quits")
+                 if cols(t) <= width - 6), "q quits")
+
+            room = max(0, h - 6)                     # frame, padding, way out
+            body = essential + optional[:max(0, room - len(essential))]
+            height = min(h - 1, len(body) + 5)
+            top = max(0, (h - height) // 2)
+            left = max(0, (w - width) // 2)
+
+            frame(self.stdscr, top, left, height, width, "LOCKED 施錠",
+                  C_WARN, C_WARN)
+            for i, (text, color, bold) in enumerate(body):
+                if text:
+                    put(self.stdscr, top + 2 + i, left + 3,
+                        ellipsis(text, width - 6), attr(color, bold))
+            put(self.stdscr, top + height - 2, left + 3,
+                ellipsis(exit_line, width - 6), attr(C_DIM))
             self.stdscr.refresh()
 
             self.stdscr.timeout(-1)

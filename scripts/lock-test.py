@@ -26,9 +26,9 @@ from space.model import add_days, today                         # noqa: E402
 from space.review import owed                                   # noqa: E402
 
 
-def board(dbp, keys, out):
-    env = dict(os.environ, TERM="xterm-256color", LINES="30", COLUMNS="100",
-               KIAREZ_SPACE_DB=dbp, SPACE_NO_FX="1", OUT=out)
+def board(dbp, keys, out, lines=30, cols=100):
+    env = dict(os.environ, TERM="xterm-256color", LINES=str(lines),
+               COLUMNS=str(cols), KIAREZ_SPACE_DB=dbp, SPACE_NO_FX="1", OUT=out)
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe("python3", ["python3", f"{REPO}/scripts/_lock_child.py", keys], env)
@@ -89,6 +89,19 @@ def main() -> int:
            row.did == "did this" and row.not_done == "missed that"
            and "KIAREZ" in screen,
            f"row={row}, screen={screen[:60]!r}")
+
+    # Locked out of the board with no visible way to answer is the worst
+    # this screen can do, so every size has to keep that line.
+    for lines, cols in ((30, 100), (24, 80), (14, 50), (10, 40), (8, 30), (6, 24)):
+        conn = db.connect(dbp)
+        conn.execute("delete from days")
+        conn.commit()
+        conn.close()
+        Path(out).unlink(missing_ok=True)
+        screen = board(dbp, "", out, lines, cols)
+        shown = "LOCKED" in screen and ("q quits" in screen or "q to quit" in screen)
+        expect(f"a way out is visible at {cols}x{lines}", shown,
+               f"screen={screen[:70]!r}")
 
     print("\n" + ("FAILED" if fails else "PASS"))
     return 1 if fails else 0

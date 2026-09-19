@@ -247,6 +247,8 @@ you were still living would only teach you to type anything to get in.
 **Sundays** add three more questions, where a week of data makes the answers
 real: what actually moved, what you kept avoiding (the tool already knows —
 it lists what you keep rolling forward), and the one thing you'll change.
+Put the calendar cursor on any day and its week's answers appear under the
+day's own, or read them all with `space-cli weeks`.
 
 ## Scripting
 

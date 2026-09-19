@@ -405,6 +405,19 @@ def cmd_review(conn, a):
         print(f"  {OK}nothing rotting{OFF}")
 
 
+def cmd_weeks(conn, a):
+    """The weekly reviews, newest first."""
+    rows = db.weeks(conn, a.limit)
+    if not rows:
+        print(f"{DIM}no weekly reviews yet — they are asked on Sundays{OFF}")
+        return
+    for wk in rows:
+        print(f"{ACC}week of {wk.week_start}{OFF}")
+        for label, text in (("moved", wk.moved), ("avoided", wk.avoided),
+                            ("change", wk.change)):
+            print(f"  {label:8} {text or '—'}")
+
+
 def cmd_estimates(conn, a):
     """List or edit the sizes you estimate in."""
     if a.reset:
@@ -570,6 +583,10 @@ def build_parser():
     s.add_argument("--remove", metavar="KEY")
     s.add_argument("--reset", action="store_true", help="back to the defaults")
     s.set_defaults(fn=cmd_estimates)
+
+    s = add("weeks", help="the weekly reviews")
+    s.add_argument("--limit", type=int, default=12)
+    s.set_defaults(fn=cmd_weeks)
 
     add("tree", help="the whole forest").set_defaults(fn=cmd_tree)
 

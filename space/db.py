@@ -316,6 +316,12 @@ def log_week(conn, date_str: str, moved: str, avoided: str, change: str) -> None
     conn.commit()
 
 
+def weeks(conn, limit: int = 12) -> list[Week]:
+    """The most recent weekly reviews, newest first."""
+    return [Week(**dict(r)) for r in conn.execute(
+        "select * from weeks order by week_start desc limit ?", (limit,))]
+
+
 def logged_days(conn) -> dict[str, tuple[str, str]]:
     """{date: (what you did, what you didn't)} for every answered day."""
     return {r["date"]: ((r["shipped"] or ""), (r["missed"] or ""))
