@@ -12,6 +12,7 @@ Two ideas drive the shape of this:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -42,6 +43,11 @@ ESTIMATE_MINUTES = {k: mins for k, _, mins in ESTIMATES}
 # Bigger than half a day is not one task. It still gets captured, it just
 # shouldn't be dropped onto a single day pretending it will happen.
 OVERSIZED = {"half_day", "day_plus"}
+
+# A task left in Doing overnight is not fourteen hours of work, it is a task
+# you forgot to stop. One unbroken stretch counts at most this long, so a
+# single lapse cannot poison the estimate history for good.
+MAX_DOING_STRETCH = int(os.environ.get("SPACE_MAX_DOING_MINUTES", 4 * 60))
 
 STALE_DAYS = 14          # untouched this long and it wants a decision
 NAGGING_ROLLS = 3        # rolled forward this often and it wants a decision
@@ -153,12 +159,24 @@ class Task:
         return self.estimate in OVERSIZED
 
     @property
+    def running_minutes(self) -> int:
+        """Minutes of the current, still-open Doing stretch — capped."""
+        if not self.doing_since:
+            return 0
+        mins = max(0, int((utc_now() - parse(self.doing_since)).total_seconds() / 60))
+        return min(mins, MAX_DOING_STRETCH)
+
+    @property
+    def overrun(self) -> bool:
+        """Running so long the cap has kicked in — you forgot to stop it."""
+        if not self.doing_since:
+            return False
+        mins = (utc_now() - parse(self.doing_since)).total_seconds() / 60
+        return mins > MAX_DOING_STRETCH
+
+    @property
     def actual_minutes(self) -> int:
-        secs = self.doing_seconds
-        if self.doing_since:
-            secs += max(0, int((utc_now() - parse(self.doing_since))
-                               .total_seconds()))
-        return round(secs / 60)
+        return round(self.doing_seconds / 60) + self.running_minutes
 
     @property
     def estimate_minutes(self) -> int | None:
@@ -247,6 +265,41 @@ def can_start(task: Task) -> list[str]:
     if task.defined:
         return []
     return [f"{m} is missing" for m in task.missing]
+
+
+def median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if not ordered:
+        return 0.0
+    return (ordered[mid] if len(ordered) % 2
+            else (ordered[mid - 1] + ordered[mid]) / 2)
+
+
+def estimate_accuracy(tasks) -> dict[str, tuple[int, float]]:
+    """{estimate key: (how many, median actual minutes)} over finished work.
+
+    Median, not mean: one task you forgot to stop should not redefine what an
+    hour means to you, and the cap alone doesn't make a mean trustworthy.
+    """
+    buckets: dict[str, list[float]] = {}
+    for t in tasks:
+        if t.status == "done" and t.estimate and t.doing_seconds:
+            buckets.setdefault(t.estimate, []).append(t.actual_minutes)
+    return {k: (len(v), median(v)) for k, v in buckets.items()}
+
+
+def estimate_hint(accuracy: dict[str, tuple[int, float]], key: str) -> str:
+    """What this size has actually cost you, in words, or nothing yet."""
+    n, actual = accuracy.get(key, (0, 0))
+    if n < 2:
+        return ""
+    planned = ESTIMATE_MINUTES[key]
+    ratio = actual / planned if planned else 0
+    verdict = ("about right" if 0.8 <= ratio <= 1.25 else
+               "optimistic" if ratio > 1.25 else "pessimistic")
+    return (f"your {ESTIMATE_LABELS[key]} tasks actually take "
+            f"{fmt_minutes(round(actual))} ({ratio:.1f}×, {verdict}, n={n})")
 
 
 def ship_ratio(tasks) -> tuple[int, int]:

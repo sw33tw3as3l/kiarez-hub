@@ -11,9 +11,9 @@ from datetime import date
 from . import db
 from .review import questions_for, review_day
 from .model import (
-    KIND_LABELS, NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS,
-    ESTIMATE_LABELS, GREETINGS, add_days, can_start, fmt_minutes, ship_ratio,
-    today,
+    ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS, KIND_LABELS,
+    NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start,
+    estimate_accuracy, estimate_hint, fmt_minutes, ship_ratio, today,
 )
 from . import fx
 from .theme import fx_enabled  # noqa: F401
@@ -281,7 +281,12 @@ class App:
         if doing:
             t = doing[0]
             run = fmt_minutes(t.actual_minutes)
-            over = t.estimate_minutes and t.actual_minutes > t.estimate_minutes
+            if t.overrun:
+                # Stopped counting: this is a forgotten timer, and saying so
+                # is the only way the number stays worth anything.
+                run += " ⚠ stopped counting"
+            over = t.overrun or (t.estimate_minutes
+                                 and t.actual_minutes > t.estimate_minutes)
             put(self.stdscr, y, x, "◈", attr(C_DOING, self.pulse.on(0.5)))
             put(self.stdscr, y, x + 2,
                 ellipsis(f"{t.title} {run}", max(12, w - x - 30)),
@@ -606,25 +611,34 @@ class App:
             y += 1
         y += 1
 
-        # 2. How wrong your estimates are, in your own data.
-        finished = [t for t in db.tasks(self.conn)
-                    if t.status == "done" and t.estimate and t.doing_seconds]
+        # 2. How wrong your estimates are, per size, in your own data.
+        accuracy = estimate_accuracy(db.tasks(self.conn))
         put(self.stdscr, y, 2, "Estimate vs actual", attr(C_ACCENT, True))
+        put(self.stdscr, y, 24, "median, so one forgotten timer can't rewrite an hour",
+            attr(C_DIM))
         y += 1
-        if finished:
-            ratios = [t.actual_minutes / t.estimate_minutes for t in finished
-                      if t.estimate_minutes]
-            avg = sum(ratios) / len(ratios)
+        if not accuracy:
             put(self.stdscr, y, 4,
-                f"over {len(finished)} finished tasks you take {avg:.1f}× your estimate",
-                attr(C_WARN if avg > 1.5 else C_DONE))
-            y += 1
-        else:
-            put(self.stdscr, y, 4,
-                "no finished timed tasks yet — time counts while a task sits in Doing",
+                "nothing finished and timed yet — time counts while a task is in Doing",
                 attr(C_DIM))
+            y += 2
+        else:
+            for key in ESTIMATE_KEYS:
+                if key not in accuracy:
+                    continue
+                n, actual = accuracy[key]
+                planned = ESTIMATE_MINUTES[key]
+                ratio = actual / planned if planned else 0
+                bar = fx.bar(min(ratio, 3.0), 3.0, 18)
+                color = (C_DONE if 0.8 <= ratio <= 1.25 else
+                         C_WARN if ratio > 1.75 else C_DOING)
+                put(self.stdscr, y, 4,
+                    f"{ESTIMATE_LABELS[key]:<9} → {fmt_minutes(round(actual)):>6}"
+                    f"  {ratio:>4.1f}×  ", attr(color))
+                put(self.stdscr, y, 32, bar, attr(color))
+                put(self.stdscr, y, 52, f"n={n}", attr(C_DIM))
+                y += 1
             y += 1
-        y += 1
 
         # 3. What has stopped being work.
         rotting = self.stale()
@@ -720,6 +734,13 @@ class App:
             self.message_at = time.monotonic()
             self.message = "captured to inbox"
 
+    def estimate_hint(self, value: str) -> str:
+        """What the size under the cursor has actually cost you before."""
+        if not value:
+            return "← → to pick — the tool checks this against what it took"
+        learned = estimate_hint(estimate_accuracy(db.tasks(self.conn)), value)
+        return learned or f"no finished {ESTIMATE_LABELS[value]} tasks yet to compare against"
+
     def task_form(self, task=None, day=None):
         choices = self.node_choices()
         if not choices:
@@ -735,7 +756,8 @@ class App:
                   value=(task.outcome if task else "") or "",
                   hint="how you'll know it's finished"),
             kind_field((task.kind if task else "") or ""),
-            estimate_field((task.estimate if task else "") or ""),
+            estimate_field((task.estimate if task else "") or "",
+                           hint=self.estimate_hint),
             Field("next_action", "Next action", required=True,
                   value=(task.next_action if task else "") or "",
                   hint="the first physical step, small enough to start now"),
@@ -827,24 +849,45 @@ class App:
                  attr(C_DIM), hot)
 
     def show_help(self):
+        """Keys, and what the board is for. Fits itself to the screen."""
         self.stdscr.erase()
+        h, w = self.stdscr.getmaxyx()
         put(self.stdscr, 1, 2, "Keys", attr(C_HEAD, True))
-        for i, (k, what) in enumerate(HELP):
+
+        # Everything below has to fit: the last row is reserved for the way
+        # out, and anything that doesn't fit is dropped deliberately rather
+        # than written past the edge and silently lost.
+        room = h - 5
+        shown = HELP[:max(1, room)]
+        for i, (k, what) in enumerate(shown):
             put(self.stdscr, 3 + i, 4, k.ljust(12), attr(C_ACCENT))
-            put(self.stdscr, 3 + i, 18, what, attr(C_DIM))
-        y = 5 + len(HELP)
-        put(self.stdscr, y, 2, "How it works", attr(C_HEAD, True))
-        for i, line in enumerate([
-                "The tree is permanent: a leaf is a goal, a branch is an area, nothing closes.",
-                "Capture is free; a task only has to be defined before you start it.",
-                "Unfinished work rolls to today automatically — Review shows what keeps rolling.",
-                "Ship = someone else could notice. Support = only helps you ship later.",
-                "Time counts while a task sits in Doing, and is compared to your estimate.",
-                "space-track records how long watched apps hold focus."]):
-            put(self.stdscr, y + 2 + i, 4, line, attr(C_DIM))
-        put(self.stdscr, y + 9, 2, "any key to go back", attr(C_DIM))
+            put(self.stdscr, 3 + i, 18, ellipsis(what, w - 22), attr(C_DIM))
+        y = 3 + len(shown)
+        if len(shown) < len(HELP):
+            rest = len(HELP) - len(shown)
+            put(self.stdscr, y, 4,
+                f"… {rest} more key{'' if rest == 1 else 's'} — "
+                f"a taller window shows them all", attr(C_DIM))
+            y += 1
+
+        prose = [
+            "The tree is permanent: a leaf is a goal, a branch an area, nothing closes.",
+            "Capture is free; a task only has to be defined before you start it.",
+            "Unfinished work rolls to today — Review shows what keeps rolling.",
+            "Ship = someone else could notice. Support = only helps you ship later.",
+            "Time counts while a task sits in Doing, against your estimate.",
+            "space-track records how long watched apps hold focus.",
+        ]
+        if h - y > 4:
+            put(self.stdscr, y + 1, 2, "How it works", attr(C_HEAD, True))
+            for i, line in enumerate(prose[:h - y - 4]):
+                put(self.stdscr, y + 3 + i, 4, ellipsis(line, w - 8), attr(C_DIM))
+
+        put(self.stdscr, h - 1, 2, "any key to go back", attr(C_DIM))
         self.stdscr.refresh()
-        self.stdscr.getch()
+        self.stdscr.timeout(-1)
+        while self.stdscr.getch() in (-1, curses.KEY_RESIZE):
+            pass
 
     # --- input --------------------------------------------------------------
 

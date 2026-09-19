@@ -27,6 +27,19 @@ notify() {
   fi
 }
 
+# The day locks a few hours after the question is asked, and a notification
+# that lands while you are asleep or away is a notification that never
+# happened — the first real night proved it, with a permanently blank day.
+# So after the first one, keep checking until the window closes, and only
+# speak up when the session is actually unlocked. A locked screen means
+# nobody is there to answer, and buzzing at them achieves nothing.
+RETRY_EVERY="${SPACE_REVIEW_RETRY:-900}"
+
+session_unlocked() {
+  [ "$(loginctl show-session "${XDG_SESSION_ID:-self}" -p LockedHint --value \
+       2>/dev/null)" != "yes" ]
+}
+
 while true; do
   # Seconds until the next occurrence of AT, today or tomorrow.
   now=$(date +%s)
@@ -35,8 +48,14 @@ while true; do
   sleep $(( target - now ))
 
   # Only interrupt if there is actually something to answer.
-  if "$REVIEW" --check; then
-    notify
-  fi
+  "$REVIEW" --check && notify
+
+  # Then keep an eye on it until the day closes, catching you whenever you
+  # come back to the keyboard rather than only at the moment it was asked.
+  while "$REVIEW" --check; do
+    sleep "$RETRY_EVERY"
+    "$REVIEW" --check || break
+    session_unlocked && notify
+  done
   sleep 60          # don't re-fire inside the same minute
 done

@@ -49,6 +49,10 @@ Rules that matter:
   any node. `move_node()` refuses cycles; deleting cascades to the subtree and
   nulls the tasks' `node_id`.
 - Ship vs Support is on every task and drives the day strip and Review.
+- **The Doing clock is capped at `MAX_DOING_STRETCH`**, for the same reason the
+  focus tracker caps a stretch. `estimate_accuracy()` reports a median per
+  size, never a mean over everything; `Field.hint` may be a callable so the
+  estimate field can speak about the option under the cursor.
 - Unfinished tasks roll to today and increment `rolls`.
 - No third-party dependencies. The point is that it starts instantly.
 

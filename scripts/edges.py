@@ -85,6 +85,37 @@ check("logging an empty answer still marks the day", lambda: (
     (db.log_day(c, today(), "nothing", ""),
      db.day_log(c, today()).answered)[1], "day not marked answered"))
 
+# --- the estimate clock -------------------------------------------------------
+from datetime import timedelta                            # noqa: E402
+from space.model import (MAX_DOING_STRETCH, estimate_accuracy,               # noqa: E402
+                         estimate_hint, utc_now)
+
+def timed(minutes_ago, estimate="1h"):
+    tid = db.capture(c, f"ran {minutes_ago}m", node_id=root, day=today(),
+                     kind="ship", estimate=estimate, outcome="x", next_action="y")
+    db.set_status(c, tid, "doing")
+    db.update_task(c, tid, doing_since=(utc_now() - timedelta(minutes=minutes_ago))
+                   .isoformat(timespec="seconds"))
+    return tid
+
+check("a forgotten timer is capped, not believed", lambda: (
+    (lambda t: (db.set_status(c, t, "done"),
+                db.task(c, t).actual_minutes == MAX_DOING_STRETCH)[1])(timed(14 * 60)),
+    "an overnight task banked its whole night"))
+
+check("a normal stretch is untouched", lambda: (
+    (lambda t: (db.set_status(c, t, "done"),
+                abs(db.task(c, t).actual_minutes - 37) <= 1)[1])(timed(37)),
+    "a short stretch was altered"))
+
+check("overrun is visible while it runs", lambda: (
+    db.task(c, timed(9 * 60)).overrun and not db.task(c, timed(5)).overrun,
+    "overrun misreported"))
+
+check("accuracy buckets by size and needs two samples", lambda: (
+    estimate_hint(estimate_accuracy(db.tasks(c)), "day_plus") == "",
+    "reported a verdict from too little data"))
+
 # --- text measured in columns, not codepoints ---------------------------------
 from space.text import cols, fit, pad, ellipsis            # noqa: E402
 

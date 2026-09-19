@@ -48,7 +48,7 @@ before you can start it:
 | outcome | how you'll know it's done |
 | next action | the first physical step |
 | kind | **Ship** or **Support** |
-| estimate | checked against what it actually took |
+| estimate | checked against what it actually took, per size |
 
 Trying to start an undefined task refuses and says what's missing. Friction
 sits at the moment of commitment, not the moment of capture.
@@ -71,8 +71,30 @@ date — but the Review view knows exactly what you keep pushing.
 3. **Inbox** — captured, not yet on a day. `s` schedules, `e` defines.
 4. **Tree** — the whole forest, foldable, with counts rolled up.
 5. **Review** — what the board would rather you didn't see: where the last
-   seven days went, how far off your estimates are, and every task that has
-   been untouched for two weeks or rolled forward three times.
+   seven days went, how far off your estimates are *per size*, and every task
+   that has been untouched for two weeks or rolled forward three times.
+
+### Estimating
+
+Time accrues while a task sits in Doing, and one unbroken stretch counts at
+most four hours (`SPACE_MAX_DOING_MINUTES`) — a task left running overnight
+is a forgotten timer, not a long day, and without the cap a single lapse
+poisons the history for good. While a task is over the cap the day strip says
+"stopped counting" rather than quietly inventing hours.
+
+Accuracy is kept per size and reported as a **median**, so one bad sample
+can't redefine what an hour means to you:
+
+```
+15m       →    15m   1.0×   ██████              n=5
+30m       →    51m   1.7×   ██████████▎         n=5
+1h        →   1h37   1.6×   █████████▊          n=5
+2h        →   4h02   2.0×   ████████████▏       n=5
+```
+
+The form tells you this while you are choosing, which is the only moment it
+can change anything: standing on "1h" reads *your 1h tasks actually take
+1h37 (1.6×, optimistic, n=5)*.
 
 ## Keys
 

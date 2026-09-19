@@ -92,7 +92,13 @@ class Field:
     required: bool = False
     choices: list[tuple[str, str]] | None = None   # (value, label)
     value: str = ""
-    hint: str = ""
+    hint: str | object = ""          # str, or a callable taking the value
+
+    @property
+    def hint_text(self) -> str:
+        """Hints may be callables, so a choice can speak about the option
+        you are standing on rather than about the field in general."""
+        return self.hint(self.value) if callable(self.hint) else (self.hint or "")
 
     @property
     def display(self) -> str:
@@ -102,10 +108,11 @@ class Field:
         return self.value or ""
 
 
-def estimate_field(value: str = "") -> Field:
+def estimate_field(value: str = "", hint=None) -> Field:
     return Field("estimate", "Estimate", "choice", required=True,
                  choices=[(k, label) for k, label, _ in ESTIMATES], value=value,
-                 hint="← → to pick — the tool compares this against actual time")
+                 hint=hint or
+                 "← → to pick — the tool compares this against actual time")
 
 
 def kind_field(value: str = "") -> Field:
@@ -134,7 +141,8 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
         h, w = stdscr.getmaxyx()
         width = min(w - 4, 96)
         left = max(1, (w - width) // 2)
-        rows = sum(2 + bool(fld.hint and i == idx) for i, fld in enumerate(fields))
+        rows = sum(2 + bool(i == idx and fld.hint_text)
+                   for i, fld in enumerate(fields))
         height = min(h - 1, rows + 6 + (len(problems) + 1 if problems else 0))
         top = max(0, (h - height) // 2)
 
@@ -176,8 +184,9 @@ def run_form(stdscr, title: str, fields: list[Field], validate=None) -> dict | N
                 elif selected and not text:
                     put(stdscr, y, value_x, "enter to type", attr(C_DIM))
 
-            if selected and field.hint:
-                put(stdscr, y + 1, value_x, ellipsis(field.hint, room), attr(C_VIOLET))
+            hint = field.hint_text if selected else ""
+            if hint:
+                put(stdscr, y + 1, value_x, ellipsis(hint, room), attr(C_VIOLET))
                 y += 1
             y += 2
 

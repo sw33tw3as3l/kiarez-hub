@@ -413,9 +413,11 @@ def set_status(conn, task_id: str, status: str) -> None:
         return
     fields = {"status": status}
     if t.status == "doing" and t.doing_since:        # leaving doing: bank it
-        from .model import parse
-        fields["doing_seconds"] = t.doing_seconds + max(
-            0, int((utc_now() - parse(t.doing_since)).total_seconds()))
+        from .model import MAX_DOING_STRETCH, parse
+        ran = max(0, int((utc_now() - parse(t.doing_since)).total_seconds()))
+        # Cap the stretch, for the same reason the focus tracker does: a task
+        # left running overnight is a forgotten timer, not a long day's work.
+        fields["doing_seconds"] = t.doing_seconds + min(ran, MAX_DOING_STRETCH * 60)
         fields["doing_since"] = None
     if status == "doing":
         fields["doing_since"] = now()

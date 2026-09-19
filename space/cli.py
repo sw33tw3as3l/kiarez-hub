@@ -25,7 +25,7 @@ from . import db
 from .review import review_day
 from .text import cols, ellipsis, pad
 from .model import (
-    ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
+    ESTIMATE_MINUTES, estimate_accuracy, ESTIMATE_KEYS, ESTIMATE_LABELS, KIND_KEYS, KIND_LABELS, NAGGING_ROLLS,
     STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start, fmt_minutes,
     ship_ratio, today,
 )
@@ -381,15 +381,18 @@ def cmd_review(conn, a):
     if not totals:
         print(f"  {DIM}nothing recorded{OFF}")
 
-    print(f"\n{ACC}Estimate vs actual{OFF}")
-    finished = [t for t in db.tasks(conn)
-                if t.status == "done" and t.estimate_minutes and t.doing_seconds]
-    if finished:
-        ratios = [t.actual_minutes / t.estimate_minutes for t in finished]
-        print(f"  {len(finished)} timed tasks · you take "
-              f"{sum(ratios) / len(ratios):.1f}× your estimate")
-    else:
-        print(f"  {DIM}no finished timed tasks yet{OFF}")
+    print(f"\n{ACC}Estimate vs actual{OFF}  {DIM}median per size{OFF}")
+    accuracy = estimate_accuracy(db.tasks(conn))
+    if not accuracy:
+        print(f"  {DIM}nothing finished and timed yet{OFF}")
+    for key in ESTIMATE_KEYS:
+        if key not in accuracy:
+            continue
+        n, actual = accuracy[key]
+        ratio = actual / ESTIMATE_MINUTES[key]
+        tint = OK if 0.8 <= ratio <= 1.25 else (WARN if ratio > 1.75 else ACC)
+        print(f"  {ESTIMATE_LABELS[key]:<9} → {fmt_minutes(round(actual)):>6}"
+              f"  {tint}{ratio:.1f}×{OFF}  {DIM}n={n}{OFF}")
 
     print(f"\n{ACC}Needs a decision{OFF}")
     rotting = [(t, f"rolled {t.rolls}×" if t.rolls >= NAGGING_ROLLS
