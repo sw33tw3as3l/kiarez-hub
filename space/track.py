@@ -163,10 +163,17 @@ class Tracker:
         now = time.monotonic()
         elapsed = now - self.since
         self.since = now
-        if self.current not in self.watched or elapsed < 1:
+        if elapsed <= 0:
+            return
+        if self.current not in self.watched:
             return
         if self.locked or not self.session_live:
             return
+        # No lower bound. The clock has already moved on by the time we get
+        # here, so anything discarded here is gone for good — and a second
+        # thrown away on every window switch is a minute a day at forty
+        # switches. Seconds accumulate as floats and are rounded once, at
+        # the flush.
         room = MAX_STRETCH - self.stretch_counted
         if room <= 0:
             return

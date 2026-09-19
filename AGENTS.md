@@ -94,6 +94,11 @@ Gotchas already paid for:
   stopped dead — for an hour, in production, with the process looking healthy.
   `Tracker.tick()` now runs on the loop itself. `scripts/track-test.py` holds
   the regression: a fake compositor that emits nothing but noise.
+- **`bank()` must never discard elapsed time.** It advances `since` first, so
+  anything it drops is gone — an `elapsed < 1` guard cost a second on every
+  window switch, about a minute a day. Seconds accumulate as floats and are
+  rounded once, at the flush. track-test.py drives a known focus sequence and
+  asserts the recorded seconds match it exactly.
 - **Run `scripts/smoke.py`, `scripts/edges.py`, `scripts/sizes.py` and
   `scripts/track-test.py` before committing.** sizes.py walks every view from 200x40 down to 24x8 — curses is
   unforgiving about writes past the edge and a wide development window hides

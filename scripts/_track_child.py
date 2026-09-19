@@ -6,6 +6,6 @@ from space import db
 tr.socket_path = lambda: os.environ["FAKE_SOCK"]
 tr.active_class = lambda: "org.telegram.desktop"
 tr.session_state = lambda: (False, True)
-tr.FLUSH_EVERY = 2
+tr.FLUSH_EVERY = int(os.environ.get("FLUSH", 2))
 t = tr.Tracker(db.connect(os.environ["KIAREZ_SPACE_DB"]))
 t.run()
