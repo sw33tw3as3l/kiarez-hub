@@ -112,6 +112,7 @@ can change anything: standing on "1h" reads *your 1h tasks actually take
 | `m` `x` | in Tree: move (reparent) / delete a node and its subtree |
 | `[` `]` `t` | previous day / next day / today |
 | `<` `>` | move the selected task to another day |
+| `g` | go to a date — `2026-12-25`, or `+3` / `-7` days from today |
 | `?` `q` | help / quit |
 
 In a form: type to edit, `←`/`→` change a choice — every option is on screen

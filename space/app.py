@@ -46,6 +46,7 @@ HELP = [
     ("w", "answer today's question (the only one)"),
     ("a", "in Tree: add a child · A adds a root · m moves · x deletes"),
     ("[ ] t", "previous day / next day / today"),
+    ("g", "go to a date — YYYY-MM-DD, or +3 / -7"),
     ("< >", "move the selected task to another day"),
     ("? q", "help / quit"),
 ]
@@ -712,6 +713,48 @@ class App:
             return "a little more and you'll know what it meant tomorrow", C_VIOLET
         return f"{n} characters · enter drops it in the inbox", C_DONE
 
+    def goto_day(self) -> None:
+        """Jump straight to a date. Stepping there one day at a time is fine
+        for tomorrow and useless for last month."""
+        def react(value: str):
+            text = value.strip()
+            if not text:
+                return "YYYY-MM-DD, or +3 / -7 for days from today", C_DIM
+            parsed = self.parse_day(text)
+            if not parsed:
+                return "not a date I can read", C_WARN
+            n = len(db.tasks(self.conn, day=parsed))
+            weekday = date.fromisoformat(parsed).strftime("%A")
+            return f"{weekday} {parsed} · {n} task{'' if n == 1 else 's'}", C_DONE
+
+        got = prompt(self.stdscr, "go to", react=react)
+        if got is None:
+            return
+        parsed = self.parse_day(got.strip())
+        self.message_at = time.monotonic()
+        if not parsed:
+            self.message = f"“{got.strip()}” is not a date"
+            return
+        self.day, self.row = parsed, 0
+        self.cal_cursor = date.fromisoformat(parsed)
+        self.message = f"jumped to {parsed}"
+
+    @staticmethod
+    def parse_day(text: str) -> str | None:
+        """A date, or an offset in days from today: +3, -7, 0."""
+        text = text.strip()
+        if not text:
+            return None
+        if text[0] in "+-" or text.isdigit():
+            try:
+                return add_days(today(), int(text))
+            except ValueError:
+                return None
+        try:
+            return date.fromisoformat(text).isoformat()
+        except ValueError:
+            return None
+
     def filter_react(self, value: str):
         """Count the matches while you type, so you know before you commit."""
         needle = value.strip().lower()
@@ -921,6 +964,11 @@ class App:
         if ch == ord("c"):
             self.capture()
             return True
+        if ch == ord("n") and self.view not in ("today",):
+            # The form is not a property of one view; opening it anywhere and
+            # having nothing happen is just a key that appears to be broken.
+            self.task_form()
+            return True
         if ch == ord("/"):
             found = prompt(self.stdscr, "filter", self.filter,
                            react=self.filter_react)
@@ -949,6 +997,9 @@ class App:
         if ch == ord("t"):
             self.day = today()
             self.cal_cursor = date.fromisoformat(self.day)
+            return True
+        if ch == ord("g"):
+            self.goto_day()
             return True
 
         return {"today": self.handle_day, "calendar": self.handle_calendar,

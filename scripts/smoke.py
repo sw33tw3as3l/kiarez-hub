@@ -35,6 +35,9 @@ JOURNEYS = [
     ("new task form", "1n\x1b"),
     ("answer the day", "w" + "shipped the thing\r" + "the other thing\r"),
     ("help", "?x"),
+    ("go to a date", "g" + "+3" + "\r" + "g" + "-2" + "\r" + "t"),
+    ("filter", "/" + "a" + "\r" + "/" + "\r"),
+    ("new task from the inbox", "3n\x1b"),
     ("review", "5jk"),
 ]
 
@@ -176,6 +179,27 @@ def check_outcomes(failures: list) -> None:
         expect("> moves the task to tomorrow",
                row and row["day"] == (datetime.date.today()
                                       + datetime.timedelta(days=1)).isoformat(),
+               f"day={row['day'] if row else None}")
+
+        # g must actually move the board to the day it names.
+        db = f"{tmp}/outcome-goto.db"
+        env = dict(os.environ, KIAREZ_SPACE_DB=db)
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True, env=env)
+        cap = subprocess.run([str(REPO / "bin/space-cli"), "--plain", "c", "Far away"],
+                             capture_output=True, text=True, env=env).stdout.strip()
+        subprocess.run([str(REPO / "bin/space-cli"), "define", cap, "--goal", "work",
+                        "--outcome", "done", "--kind", "ship", "--estimate", "1h",
+                        "--next", "go"], capture_output=True, env=env)
+        subprocess.run([str(REPO / "bin/space-cli"), "schedule", cap],
+                       capture_output=True, env=env)
+        # jump forward three days, then push the task there with >
+        conn = board(db, "g+3\r")
+        # nothing should have moved yet
+        row = conn.execute("select day from tasks").fetchone()
+        import datetime as _dt
+        expect("g alone changes nothing in the data",
+               row and row["day"] == _dt.date.today().isoformat(),
                f"day={row['day'] if row else None}")
 
         # Advancing a task must move its status.

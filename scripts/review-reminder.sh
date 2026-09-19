@@ -47,14 +47,19 @@ while true; do
   [ "$target" -le "$now" ] && target=$(date -d "tomorrow $AT" +%s)
   sleep $(( target - now ))
 
-  # Only interrupt if there is actually something to answer.
-  "$REVIEW" --check && notify
+  # Which day this round is about. Everything below is tied to it, so when
+  # the window rolls over to the next day the loop ends instead of quietly
+  # becoming an all-day nag about a day that is not due yet.
+  day="$("$REVIEW" --day)"
 
-  # Then keep an eye on it until the day closes, catching you whenever you
-  # come back to the keyboard rather than only at the moment it was asked.
-  while "$REVIEW" --check; do
+  # Only interrupt if there is actually something to answer.
+  "$REVIEW" --check --for "$day" && notify
+
+  # Then keep an eye on it until that day's window closes, catching you
+  # whenever you come back to the keyboard rather than only at midnight.
+  while "$REVIEW" --check --for "$day"; do
     sleep "$RETRY_EVERY"
-    "$REVIEW" --check || break
+    "$REVIEW" --check --for "$day" || break
     session_unlocked && notify
   done
   sleep 60          # don't re-fire inside the same minute

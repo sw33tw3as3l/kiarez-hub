@@ -185,7 +185,14 @@ def weekly(conn, day: str) -> None:
 
 
 def pending(conn, day: str | None = None) -> bool:
-    """Is there anything still answerable?"""
+    """Is there anything still answerable for `day`?
+
+    Naming the day matters for anything that loops: "is the current review day
+    unanswered" becomes true again the moment the window rolls over to a new
+    day, which would turn a reminder into an all-day nag.
+    """
+    if day is not None and day != review_day():
+        return False                      # that window has closed
     day = day or review_day()
     if not db.day_log(conn, day).answered:
         return True
@@ -204,6 +211,10 @@ def main(argv=None) -> int:
     conn = db.connect()
     day = review_day()
 
+    if "--day" in argv:                       # for scripts: which day is open?
+        print(day)
+        return 0
+
     if "--date" in argv:
         wanted = argv[argv.index("--date") + 1]
         if wanted != day:
@@ -213,7 +224,10 @@ def main(argv=None) -> int:
             return 1
 
     if "--check" in argv:                     # for scripts: is anything pending?
-        return 0 if pending(conn, day) else 1
+        wanted = argv[argv.index("--for") + 1] if "--for" in argv else None
+        if wanted:
+            return 0 if pending(conn, wanted) else 1
+        return 0 if pending(conn) else 1
 
     log = db.day_log(conn, day)
     if log.answered and "--again" not in argv and not (
