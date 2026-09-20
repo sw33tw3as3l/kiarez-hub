@@ -210,7 +210,13 @@ class KittyGlow:
         self.backdrop_size = (cols, rows)
 
     def clear(self) -> None:
-        if self.placed or self.sent:
+        """Remove the light's placement, if it has one.
+
+        Guarded on `placed` alone. Including `sent` here meant a delete went
+        out on every frame once the image had ever been transmitted, whether
+        anything was on screen or not.
+        """
+        if self.placed:
             self._write(self._cmd(f"a=d,d=i,i={IMAGE_ID},q=2"))
             self.placed = False
 

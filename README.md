@@ -34,7 +34,9 @@ horizon, a perspective grid running to it, scanlines, and a vignette. It is
 generated once at startup and re-placed only when the window changes size.
 Its brightest pixel is about a seventh of full brightness, because the board
 has to stay readable on top of it; the vignette takes the middle down further
-still, where the columns live.
+still, where the columns live. The lock screen gets the backdrop too, but not
+the moving light — it is a stop, and something moving on it would read as an
+invitation to wait.
 
 Either way it is round, which takes care in a terminal: a cell is about twice
 as tall as it is wide, so the circle has to be drawn twice as wide in cells as

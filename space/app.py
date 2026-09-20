@@ -269,6 +269,13 @@ class App:
         stops drawing, and SPACE_NO_FX turns it off outright.
         """
         if not self.light or self._draw_ms > self.LIGHT_BUDGET_MS:
+            # Stopping has to take the light with it. Returning here left the
+            # last placement sitting on screen for good — a glow frozen in one
+            # corner is worse than none, and it is exactly what a board big
+            # enough to trip the budget got. The backdrop can stay: it is
+            # static, so it costs nothing to leave where it is.
+            if self.real_light is not None:
+                self.real_light.clear()
             return
         cx, cy = fx.glow_centre(h, w, self.light_phase())
 
@@ -1469,6 +1476,10 @@ class App:
 
             h, w = self.stdscr.getmaxyx()
             self.stdscr.erase()
+            # The city, but not the drifting light: this screen is a stop, and
+            # something moving on it would read as an invitation to wait.
+            if self.real_light is not None:
+                self.real_light.backdrop(w, h)
             width = max(24, min(w - 4, 76))
 
             items = db.tasks(self.conn, day=day)

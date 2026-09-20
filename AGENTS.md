@@ -118,6 +118,11 @@ Gotchas already paid for:
   way.** `db.badge_counts()` assembles three counts, each optionally scoped to
   a branch; a single flat argument list guessed at the order and crashed the
   moment a scope was active. Each subquery carries its own parameters now.
+- **Turning the light off has to take the placement with it.** `draw_light`
+  returning early on the frame budget left the last placement on screen for
+  good — a glow frozen in a corner, which is what any board big enough to trip
+  the budget got. `clear()` guards on `placed` alone; including `sent` sent a
+  delete every frame forever.
 - `space/glow.py` also draws the backdrop — procedural, no assets, `DIM`
   takes the finished image down to a seventh of full brightness because text
   has to win against it. Sent once, re-placed only on resize, and its z sits
