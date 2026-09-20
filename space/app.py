@@ -78,6 +78,8 @@ class App:
         self.glitch_until = 0.0
         self.filter = ""
         self.node_filter: str | None = None
+        self.light = fx.fx_enabled()
+        self._draw_ms = 0.0
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
@@ -206,6 +208,7 @@ class App:
         # tasks three times over, and every view rebuilt the same objects for
         # its chips; on a large board that was the whole frame budget.
         self._frame_cache = {}
+        started = time.perf_counter()
         self.stdscr.erase()
         h, w = self.stdscr.getmaxyx()
         self.draw_header(w)
@@ -214,7 +217,12 @@ class App:
          "inbox": self.draw_inbox, "tree": self.draw_tree,
          "review": self.draw_review}[self.view](3, body, w)
         self.draw_footer(h, w)
+        self.draw_light(h, w)              # only where nothing else is
         self.stdscr.refresh()
+        # A rolling measure of what a frame costs, so the sweep can get out of
+        # the way on a board too big to animate cheaply.
+        self._draw_ms = (self._draw_ms * 3 + (time.perf_counter() - started)
+                         * 1000) / 4
 
     def badges(self) -> dict[str, int]:
         """What each view would tell you if you went there.
@@ -236,6 +244,48 @@ class App:
             counts = db.badge_counts(self.conn, self.day, STALE_DAYS,
                                      NAGGING_ROLLS, self.scope_ids())
         return {k: v for k, v in counts.items() if v}
+
+    LIGHT_BUDGET_MS = 8.0
+
+    def light_phase(self) -> float:
+        return (time.monotonic() % fx.LIGHT_PERIOD) / fx.LIGHT_PERIOD
+
+    def draw_light(self, h: int, w: int) -> None:
+        """The ambient sweep, in the empty space around the board.
+
+        Drawn last and only onto cells that are blank. Painting it first and
+        letting the board cover it sounds right and is not: the gaps inside a
+        line — between a card's edge and its text — stay uncovered, and a
+        glyph sitting in one of those reads as corruption rather than as
+        depth. Asking each of the ninety-odd cells what is already there is
+        cheaper than it sounds and exact.
+
+        Purely decorative, so it is the first thing to go: past the frame
+        budget it stops drawing, and SPACE_NO_FX turns it off outright.
+        """
+        if not self.light or self._draw_ms > self.LIGHT_BUDGET_MS:
+            return
+
+        # Where each row's content ends. A blank cell is not the same thing as
+        # empty space: the gap between two words is blank and putting a glyph
+        # in it reads as corruption. The margin past the end of the line is
+        # the only place this belongs.
+        margin = []
+        for y in range(h):
+            try:
+                row = self.stdscr.instr(y, 0, (w - 1) * 4).decode(
+                    "utf-8", "replace")
+            except curses.error:
+                row = ""
+            margin.append(len(row.rstrip()) + 2)
+
+        glyphs = fx.LIGHT_GLYPHS
+        for y, x, strength in fx.light_cells(h, w, self.light_phase()):
+            if x < margin[y]:
+                continue
+            glyph = glyphs[min(len(glyphs) - 1, int(strength * len(glyphs)))]
+            put(self.stdscr, y, x, glyph,
+                attr(C_VIOLET if strength > 0.6 else C_DEEP))
 
     def draw_header(self, w):
         badges = self.badges()
@@ -1528,9 +1578,15 @@ class App:
             return
         while True:
             self.draw()
-            # Only spin when something on screen is moving; otherwise block,
-            # so an idle board costs nothing at all.
-            self.stdscr.timeout(180 if self.alive() else -1)
+            # The sweep is the one thing that moves with nothing happening,
+            # so it sets the floor: a slow cadence while it is on, the usual
+            # one while something else is animating, and blocking otherwise.
+            if self.alive():
+                self.stdscr.timeout(180)
+            elif self.light and self._draw_ms <= self.LIGHT_BUDGET_MS:
+                self.stdscr.timeout(130)
+            else:
+                self.stdscr.timeout(-1)
             ch = self.stdscr.getch()
             if ch in (-1, curses.KEY_RESIZE):
                 continue

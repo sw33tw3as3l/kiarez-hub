@@ -118,6 +118,12 @@ Gotchas already paid for:
   way.** `db.badge_counts()` assembles three counts, each optionally scoped to
   a branch; a single flat argument list guessed at the order and crashed the
   moment a scope was active. Each subquery carries its own parameters now.
+- The ambient sweep (`App.draw_light`) is drawn **last**, into the margin past
+  each row's text, measured with `instr`. Drawing it first and letting the
+  board cover it leaves it sitting in the gaps inside a line; testing for a
+  blank cell has the same problem, because the space between two words is
+  blank. It is skipped once `_draw_ms` passes `LIGHT_BUDGET_MS` — decoration
+  is the first thing that should go when a frame gets expensive.
 - **One frame, one set of reads.** `App.draw()` clears `_frame_cache` and every
   view reads tasks through `App.read_tasks()`; the chips are counted by
   `db.badge_counts()` in SQL. Before that, a three-thousand-task board built
