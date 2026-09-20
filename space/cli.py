@@ -237,12 +237,13 @@ def cmd_day(conn, a):
     With no --date this means the day still open for answering, which before
     04:00 is yesterday — the same day the board and the reminder mean.
     """
-    day = valid_date(a.date) if a.date else review_day()
+    day = valid_date(a.date) if a.date else review_day(conn=conn)
     log = db.day_log(conn, day)
-    if (a.did or a.missed) and day != review_day():
+    if (a.did or a.missed) and day != review_day(conn=conn):
         # The lock is the whole point of the daily question; the CLI must not
         # be a way around it.
-        sys.exit(f"{day} is closed — only {review_day()} can still be answered")
+        sys.exit(f"{day} is closed — only {review_day(conn=conn)} "
+                 f"can still be answered")
     if not a.did and not a.missed:
         if not log.answered:
             print(f"{DIM}{day} not answered{OFF}")

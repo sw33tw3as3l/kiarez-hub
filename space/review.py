@@ -16,6 +16,7 @@ Rules, all deliberate:
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date, datetime, timedelta
 
@@ -26,15 +27,17 @@ from .model import (
 
 DIM, ACC, OK, WARN, OFF = "\033[2m", "\033[33m", "\033[32m", "\033[31m", "\033[0m"
 
-# The question is asked at midnight, when the day you are reporting on has
-# just ended. So the reviewable day runs to 04:00, not to 24:00: at 00:30 you
-# are still answering for the day you actually lived. After 04:00 that day is
-# closed for good — the lock still exists, it just sits where the sleep does.
-DAY_ENDS_AT = 4
+# You can always answer yesterday, any time today. At midnight tonight
+# yesterday closes for good and today takes its place.
+#
+# This replaces an hour-of-the-morning cutoff, which sounded reasonable and
+# was not: the first two nights it shipped both closed unanswered, because the
+# question arrives at midnight while you are busy or asleep and the window had
+# already shut by the time you were back at the keyboard. One day of grace is
+# still a day you lived and can remember, and it cannot be backfilled — you
+# are never writing about Tuesday on Friday.
 
-# Two questions, in this order. The second is the one that does the work:
-# what you did is usually already on the board, what you didn't is not
-# recorded anywhere and is what the day actually cost.
+
 DAILY = [
     ("did", "What important things did you do today?",
      'the ones that mattered — "nothing" is a real answer'),
@@ -52,10 +55,20 @@ WEEKLY = [
 ]
 
 
-def review_day(when: datetime | None = None) -> str:
-    """The day currently being reviewed — yesterday until 04:00, then today."""
+def yesterday(when: datetime | None = None) -> str:
+    return ((when or datetime.now()).date() - timedelta(days=1)).isoformat()
+
+
+def review_day(when: datetime | None = None, conn=None) -> str:
+    """The day a sit-down is about: yesterday while it is still unanswered.
+
+    Once yesterday is answered this is today, so an evening entry has
+    somewhere to go.
+    """
     when = when or datetime.now()
-    return (when - timedelta(hours=DAY_ENDS_AT)).date().isoformat()
+    if conn is not None and not db.day_log(conn, yesterday(when)).answered:
+        return yesterday(when)
+    return when.date().isoformat()
 
 
 def questions_for(day: str) -> list[tuple[str, str, str]]:
@@ -185,28 +198,25 @@ def pending(conn, day: str | None = None) -> bool:
     """Is there anything still answerable for `day`?
 
     Naming the day matters for anything that loops: "is the current review day
-    unanswered" becomes true again the moment the window rolls over to a new
-    day, which would turn a reminder into an all-day nag.
+    unanswered" becomes true again the moment the window rolls over, which
+    would turn a reminder into an all-day nag about a day not yet due.
     """
-    if day is not None and day != review_day():
+    current = review_day(conn=conn)
+    if day is not None and day != current:
         return False                      # that window has closed
-    day = day or review_day()
+    day = day or current
     if not db.day_log(conn, day).answered:
         return True
     return is_sunday(day) and not db.week_log(conn, day).answered
 
 
 def owed(conn) -> str | None:
-    """The day whose question is due right now, or None.
+    """Yesterday, if it is still unanswered. Otherwise nothing is due.
 
-    Due means asked and still answerable: between midnight and the 04:00
-    close, when `review_day()` is the day that just ended. Today's question is
-    not owed at ten in the morning — the day is not over — so nothing is due
-    then and nothing should be demanded.
+    Today is never owed — the day is not over, and demanding an account of a
+    day still being lived only teaches you to type something to get past it.
     """
-    day = review_day()
-    if day == date.today().isoformat():
-        return None                       # still living the day being asked about
+    day = yesterday()
     return day if not db.day_log(conn, day).answered else None
 
 
@@ -220,7 +230,7 @@ def main(argv=None) -> int:
         globals().update(DIM="", ACC="", OK="", WARN="", OFF="")
 
     conn = db.connect()
-    day = review_day()
+    day = review_day(conn=conn)
 
     if "--day" in argv:                       # for scripts: which day is open?
         print(day)

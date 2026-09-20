@@ -22,17 +22,17 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
   reactive one-line prompt.
 - `space/app.py` — the five views.
 - `space/cli.py` — scriptable commands.
-- `space/review.py` — the daily questions and the Sunday weekly. `owed()` is
-  the gate: the day whose question is due *right now*, which is only ever the
-  day that just ended, between midnight and the 04:00 close. `App.locked_out()`
-  holds the board shut on it. `scripts/lock-test.py` covers all four cases,
-  the quiet one included. Two answers
-  a day: `days.shipped` is what you did (it keeps its original name) and
-  `days.missed` is what you didn't. `pending()`
-  is what the reminder script and the board both ask. `review_day()` is the
-  writable day — yesterday until 04:00, then today — because the question is
-  asked at midnight, when the day being reported on has just ended. Nothing
-  older is ever writable, by design.
+- `space/review.py` — the daily questions and the Sunday weekly. **One day of
+  grace**: `owed()` is yesterday while it is unanswered and nothing otherwise,
+  so the board stays locked all day until you answer and today is never
+  demanded. `review_day(conn=...)` is where an answer goes — yesterday while
+  it is outstanding, today once it is settled — and it needs the connection,
+  so pass it. Nothing older than yesterday is ever writable. An hour-of-the-
+  morning cutoff was tried first and failed in production: two consecutive
+  nights closed unanswered because the question arrives at midnight and the
+  window shut before anyone was awake. `App.locked_out()` holds the board;
+  `scripts/lock-test.py` covers it, sizes included, and smoke.py has to answer
+  yesterday before it can drive anything.
 - `space/track.py` — Hyprland focus tracker. Records *keyboard focus*, not
   "app is open": nothing accrues while the session is locked or inactive, a
   lock transition refunds the idle minutes that preceded it (already-written

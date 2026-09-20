@@ -223,11 +223,10 @@ space-review            # or press w on the board
 space-cli day           # read the answers back
 ```
 
-- **The day stays answerable until 04:00**, then locks for good. The question
-  arrives at midnight, when the day you're reporting on has just ended — so
-  the boundary sits where the sleep does, not where the calendar does. An
-  unanswered day stays blank forever; a journal you can backfill records what
-  you wish had happened.
+- **You can answer yesterday any time today.** At midnight tonight it closes
+  for good and today takes its place. One day of grace is still a day you
+  lived and can remember, and it cannot be backfilled — you are never writing
+  about Tuesday on Friday.
 - **"nothing" is a real answer**, stored as such, and visible in the calendar.
 - **Both answers show in the Calendar.** Each day is marked `✓` if you did
   something, `·` if you answered "nothing", and `!` if there was something you
@@ -240,11 +239,10 @@ is still unanswered, and clicking it opens the review. It keeps checking until
 the window closes, speaking only while the screen is unlocked, so it catches
 you when you come back rather than buzzing at nobody.
 
-**The board is locked while the answer is owed.** Open `space` between
-midnight and 04:00 with the day unanswered and you get the questions, not the
-board — escaping puts the lock back, and `q` quits. Outside that window
-nothing is owed and nothing is demanded: a board that asked you about a day
-you were still living would only teach you to type anything to get in.
+**The board is locked while yesterday is unanswered.** Open `space` and you
+get the questions, not the board — escaping puts the lock back, and `q` quits.
+Today is never owed: a board that demanded an account of a day you were still
+living would only teach you to type anything to get in.
 
 **Sundays** add three more questions, where a week of data makes the answers
 real: what actually moved, what you kept avoiding (the tool already knows —

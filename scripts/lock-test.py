@@ -65,9 +65,17 @@ def main() -> int:
                estimate="1h", outcome="x", next_action="y", status="done")
     conn.close()
 
-    # Nothing is owed during the day itself.
-    expect("nothing is owed mid-day", owed(db.connect(dbp)) is None,
-           "the board would lock over a day still being lived")
+    # Today is never owed: the day is not over.
+    conn = db.connect(dbp)
+    db.log_day(conn, add_days(today(), -1), "answered it", "")
+    expect("nothing is owed once yesterday is answered",
+           owed(conn) is None, "the board would lock with nothing outstanding")
+    conn.execute("delete from days")
+    conn.commit()
+    expect("yesterday is owed while unanswered",
+           owed(db.connect(dbp)) == add_days(today(), -1),
+           "an unanswered yesterday was not owed")
+    conn.close()
 
     # Inside the window, with no answer, the board shows the lock instead.
     screen = board(dbp, "", out)

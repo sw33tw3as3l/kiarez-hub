@@ -43,11 +43,27 @@ JOURNEYS = [
 ]
 
 
+def unlock(db_path) -> None:
+    """Answer yesterday, so the board opens.
+
+    The board holds itself shut until yesterday's question is answered, which
+    is the point of it — so every test database has to get past that first,
+    exactly as a person would.
+    """
+    sys.path.insert(0, str(REPO))
+    from space import db as store
+    from space.model import add_days, today
+    conn = store.connect(str(db_path))
+    store.log_day(conn, add_days(today(), -1), "answered", "")
+    conn.close()
+
+
 def drive(db_path: Path, keys: str, fx: bool) -> str:
     env = dict(os.environ, TERM="xterm-256color", LINES="40", COLUMNS="140",
                KIAREZ_SPACE_DB=str(db_path))
     if not fx:
         env["SPACE_NO_FX"] = "1"
+    unlock(db_path)
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe("python3", ["python3", "-c",
@@ -126,7 +142,8 @@ def check_outcomes(failures: list) -> None:
         # The day's two questions must both be stored.
         db = f"{tmp}/outcome-day.db"
         conn = board(db, "w" + "did this" + "\r" + "missed that" + "\r")
-        row = conn.execute("select * from days").fetchone()
+        row = conn.execute("select * from days where shipped = 'did this'"
+                           ).fetchone()
         expect("both daily answers are saved", row is not None
                and row["shipped"] == "did this" and row["missed"] == "missed that",
                f"row={dict(row) if row else None}")

@@ -84,7 +84,7 @@ class App:
             self.message = f"{rolled} unfinished task(s) rolled forward to today"
         # The board is the backstop for the day's question: if the notification
         # was missed, opening the board says so. It never blocks you.
-        if not db.day_log(conn, review_day()).answered:
+        if not db.day_log(conn, review_day(conn=conn)).answered:
             note = "the day's question is unanswered — press w"
             self.message_at = time.monotonic()
             self.message = f"{self.message} · {note}" if self.message else note
@@ -340,7 +340,7 @@ class App:
                 x2 = x + 5 + min(len(log.did), room) + 3
                 put(self.stdscr, y, x2, f"not: {ellipsis(log.not_done, room)}",
                     attr(C_WARN))
-        elif self.day == review_day():
+        elif self.day == review_day(conn=self.conn):
             put(self.stdscr, y, x, "unanswered — press w",
                 attr(C_WARN, self.pulse.on(0.6)))
         elif self.day < today():
@@ -487,7 +487,8 @@ class App:
         put(self.stdscr, top + 1, 2,
             self.cal_cursor.strftime("%A %d %B"), attr(C_ACCENT, True))
         if not log.answered:
-            closed = "never answered — that day is closed" if iso < review_day() \
+            closed = "never answered — that day is closed" \
+                if iso < review_day(conn=self.conn) \
                 else "not answered yet"
             put(self.stdscr, top + 2, 2, closed, attr(C_DIM))
             return
@@ -918,7 +919,7 @@ class App:
         # The question always belongs to the open day, whatever day the board
         # happens to be showing. Telling someone that tomorrow "is closed"
         # because they were looking at it is nonsense.
-        day = review_day()
+        day = review_day(conn=self.conn)
         looking_elsewhere = self.day != day
         log = db.day_log(self.conn, day)
         answers = {}
@@ -1024,7 +1025,7 @@ class App:
         now = time.monotonic()
         if now < self.glitch_until or now - self.message_at < 2.0:
             return True
-        if not db.day_log(self.conn, review_day()).answered:
+        if not db.day_log(self.conn, review_day(conn=self.conn)).answered:
             return True
         if db.tasks(self.conn, day=self.day, status="doing"):
             return True                    # a running clock has to actually run
@@ -1306,7 +1307,7 @@ class App:
                  C_WARN if red else C_DIM, False),
                 ("", C_DIM, False),
                 ("Two questions, about a minute.", C_VIOLET, False),
-                ("It closes for good at 04:00, answered or not.", C_VIOLET, False),
+                ("It closes at midnight tonight, answered or not.", C_VIOLET, False),
             ]
             # Longest that fits. This line is the only thing on screen that
             # has to survive, so it gets its own ladder.
