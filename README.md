@@ -131,7 +131,7 @@ that already carry it; those show up under the listing rather than vanishing.
 | `space` | advance status — refuses to start an undefined task |
 | `e`, `Enter` | define / edit |
 | `s` `S` | schedule onto the open day / send back to inbox |
-| `w` | log what shipped today |
+| `w` `W` | answer the day's questions / the week's |
 | `a` `A` | in Tree: add a child / add a root |
 | `m` `x` | in Tree: move (reparent) / delete a node and its subtree |
 | `[` `]` `t` | previous day / next day / today |
@@ -244,9 +244,11 @@ get the questions, not the board — escaping puts the lock back, and `q` quits.
 Today is never owed: a board that demanded an account of a day you were still
 living would only teach you to type anything to get in.
 
-**Sundays** add three more questions, where a week of data makes the answers
-real: what actually moved, what you kept avoiding (the tool already knows —
-it lists what you keep rolling forward), and the one thing you'll change.
+**The week** is reviewed on the Monday after it ends — three more questions
+where a week of data makes the answers real: what actually moved, what you
+kept avoiding (the tool already knows — it lists what you keep rolling
+forward), and the one thing you'll change. Press `W` on the board, or answer
+it straight after the day's questions when the lock asks them.
 Put the calendar cursor on any day and its week's answers appear under the
 day's own, or read them all with `space-cli weeks`.
 

@@ -226,6 +226,20 @@ def owed(conn) -> str | None:
     return day if not db.day_log(conn, day).answered else None
 
 
+def weekly_owed(conn) -> str | None:
+    """The Sunday whose weekly review is still outstanding, or None.
+
+    Only ever yesterday: the week is reviewed the morning after it ends, and
+    like the daily it cannot be answered later than that.
+    """
+    day = yesterday()
+    if not is_sunday(day):
+        return None
+    if not db.day_log(conn, day).answered:
+        return None                       # the day itself comes first
+    return None if db.week_log(conn, day).answered else day
+
+
 def is_sunday(day: str) -> bool:
     return date.fromisoformat(day).weekday() == 6
 

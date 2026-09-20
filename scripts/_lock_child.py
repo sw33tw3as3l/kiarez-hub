@@ -6,6 +6,12 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import space.review as review                                   # noqa: E402
+
+# Tests need to stand on a particular day — a Sunday, to reach the weekly.
+if os.environ.get("FAKE_YESTERDAY"):
+    review.yesterday = lambda when=None: os.environ["FAKE_YESTERDAY"]
+
 from space import db, ui                                        # noqa: E402
 from space.app import App                                       # noqa: E402
 

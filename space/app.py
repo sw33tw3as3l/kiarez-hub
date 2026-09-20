@@ -10,7 +10,7 @@ import time
 from datetime import date, datetime
 
 from . import db
-from .review import owed, questions_for, review_day
+from .review import WEEKLY, owed, questions_for, review_day, weekly_owed
 from .model import (
     ESTIMATE_KEYS, ESTIMATE_LABELS, ESTIMATE_MINUTES, GREETINGS,
     NAGGING_ROLLS, STALE_DAYS, STATUS_KEYS, STATUS_LABELS, add_days, can_start,
@@ -51,7 +51,8 @@ HELP = [
     ("space", "advance status — refuses to start an undefined task"),
     ("e / Enter", "define or edit"),
     ("s / S", "schedule onto the open day / send back to inbox"),
-    ("w", "answer today's question (the only one)"),
+    ("w", "answer the day's questions"),
+    ("W", "answer the week's, on the Monday after it ends"),
     ("a", "in Tree: add a child · A adds a root · m moves · x deletes"),
     ("[ ] t", "previous day / next day / today"),
     ("g", "go to a date — YYYY-MM-DD, or +3 / -7"),
@@ -89,6 +90,10 @@ class App:
         if (datetime.now().hour >= 20
                 and not db.day_log(conn, today()).answered):
             note = "today is not written down yet — press w"
+            self.message_at = time.monotonic()
+            self.message = f"{self.message} · {note}" if self.message else note
+        if weekly_owed(conn):
+            note = "last week is unreviewed — press W"
             self.message_at = time.monotonic()
             self.message = f"{self.message} · {note}" if self.message else note
 
@@ -1128,6 +1133,12 @@ class App:
         if ch == ord("w"):
             self.answer_day()
             return True
+        if ch == ord("W"):
+            if not self.ask_weekly():
+                if not self.message:
+                    self.message_at = time.monotonic()
+                    self.message = "no weekly review is owed"
+            return True
         if ch == ord("t"):
             self.day = today()
             self.cal_cursor = date.fromisoformat(self.day)
@@ -1403,6 +1414,40 @@ class App:
             if "did" in answers:
                 db.log_day(self.conn, day, answers["did"] or "nothing",
                            answers.get("missed", ""))
+                self.ask_weekly()          # a Sunday owes three more
+
+    def ask_weekly(self) -> bool:
+        """The three Sunday questions, if the week is still owed.
+
+        Reachable from the board because the reminder asks about it: being
+        told something is outstanding by a thing that cannot then help you
+        answer it is worse than never being told.
+        """
+        week_day = weekly_owed(self.conn)
+        if not week_day:
+            return False
+        existing = db.week_log(self.conn, week_day)
+        rolling = [t.title for t in db.tasks(self.conn)
+                   if t.status != "done" and t.rolls >= NAGGING_ROLLS]
+        answers = {}
+        for key, question, hint in WEEKLY:
+            def react(value, key=key, hint=hint):
+                if key == "avoided" and not value.strip() and rolling:
+                    return f"you kept pushing: {ellipsis(', '.join(rolling), 46)}", C_WARN
+                return (hint, C_DIM) if not value.strip() else \
+                    ("that is the week, then", C_DONE)
+            got = prompt(self.stdscr, question.lower(),
+                         getattr(existing, key) or "", react=react)
+            if got is None:
+                self.message_at = time.monotonic()
+                self.message = "the week is still open — press W"
+                return False
+            answers[key] = got
+        db.log_week(self.conn, week_day, answers["moved"], answers["avoided"],
+                    answers["change"])
+        self.message_at = time.monotonic()
+        self.message = f"week of {db.week_start(week_day)} logged"
+        return True
 
     @staticmethod
     def answer_react(key: str):

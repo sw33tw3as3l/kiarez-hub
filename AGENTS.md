@@ -32,7 +32,10 @@ A local task board. Python 3 standard library only — `curses`, `sqlite3`,
   nights closed unanswered because the question arrives at midnight and the
   window shut before anyone was awake. `App.locked_out()` holds the board;
   `scripts/lock-test.py` covers it, sizes included, and smoke.py has to answer
-  yesterday before it can drive anything.
+  yesterday before it can drive anything. `weekly_owed()` is the same shape for
+  the Sunday review, reachable from the board with `W` and offered
+  automatically after the lock's daily answers — the reminder asks about it, so
+  the board has to be able to satisfy it.
 - `space/track.py` — Hyprland focus tracker. Records *keyboard focus*, not
   "app is open": nothing accrues while the session is locked or inactive, a
   lock transition refunds the idle minutes that preceded it (already-written

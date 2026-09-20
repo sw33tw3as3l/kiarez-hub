@@ -26,9 +26,11 @@ from space.model import add_days, today                         # noqa: E402
 from space.review import owed                                   # noqa: E402
 
 
-def board(dbp, keys, out, lines=30, cols=100):
+def board(dbp, keys, out, lines=30, cols=100, fake_yesterday=None):
     env = dict(os.environ, TERM="xterm-256color", LINES=str(lines),
                COLUMNS=str(cols), KIAREZ_SPACE_DB=dbp, SPACE_NO_FX="1", OUT=out)
+    if fake_yesterday:
+        env["FAKE_YESTERDAY"] = fake_yesterday
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe("python3", ["python3", f"{REPO}/scripts/_lock_child.py", keys], env)
@@ -97,6 +99,24 @@ def main() -> int:
            row.did == "did this" and row.not_done == "missed that"
            and "KIAREZ" in screen,
            f"row={row}, screen={screen[:60]!r}")
+
+    # The weekly review has to be reachable from the board, because the
+    # reminder asks about it — being told something is outstanding by a thing
+    # that cannot then help you answer it is worse than not being told.
+    sunday = "2026-09-20"
+    conn = db.connect(dbp)
+    conn.execute("delete from days")
+    conn.execute("delete from weeks")
+    conn.commit()
+    db.log_day(conn, sunday, "answered the day", "")
+    conn.close()
+    Path(out).unlink(missing_ok=True)
+    board(dbp, "W" + "moved" + "\r" + "avoided" + "\r" + "changed" + "\r",
+          out, fake_yesterday=sunday)
+    week = db.week_log(db.connect(dbp), sunday)
+    expect("W answers the week from the board",
+           week.moved == "moved" and week.change == "changed",
+           f"week={week}")
 
     # Locked out of the board with no visible way to answer is the worst
     # this screen can do, so every size has to keep that line.
