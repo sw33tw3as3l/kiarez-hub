@@ -257,16 +257,27 @@ class App:
 
         put(self.stdscr, 0, 1, "◤", attr(C_NEON, True))
         if room >= 6:
+            # The channels do not line up. Writing the word three times, one
+            # column apart, leaves a magenta edge on its left and a cyan one
+            # on its right — the tear everything in this world is drawn with,
+            # standing still.
+            # The channels show at the edges rather than as doubled letters:
+            # a magenta bar on the left, a cyan one on the right. Ghosted
+            # glyphs read as a rendering fault; bars read as intent.
+            put(self.stdscr, 0, 2, "▌", attr(C_DOING))
             put(self.stdscr, 0, 3, "KIAREZ", attr(C_NEON, True))
+            put(self.stdscr, 0, 9, "▐", attr(C_HEAD))
         if room >= 18:
-            put(self.stdscr, 0, 10, "//", attr(C_VIOLET))
-            put(self.stdscr, 0, 13, "SPACE", attr(C_ACCENT, True))
-        if room >= 20 + len(self.greeting) and not (self.filter or self.node_filter):
-            put(self.stdscr, 0, 20, self.greeting, attr(C_VIOLET))
+            put(self.stdscr, 0, 11, "／", attr(C_VIOLET))
+            put(self.stdscr, 0, 13, "▌", attr(C_DOING))
+            put(self.stdscr, 0, 14, "SPACE", attr(C_ACCENT, True))
+            put(self.stdscr, 0, 19, "▐", attr(C_HEAD))
+        if room >= 23 + len(self.greeting) and not (self.filter or self.node_filter):
+            put(self.stdscr, 0, 22, self.greeting, attr(C_VIOLET))
         tag = TAGS.get(self.view, "")
-        if tag and room >= 26 + len(self.greeting) and not (
+        if tag and room >= 29 + len(self.greeting) and not (
                 self.filter or self.node_filter):
-            put(self.stdscr, 0, 22 + len(self.greeting), tag, attr(C_DOING))
+            put(self.stdscr, 0, 24 + len(self.greeting), tag, attr(C_DOING))
         scope = ""
         if self.node_filter:
             scope = "▣ " + (db.node_paths(self.conn).get(self.node_filter, "?")
@@ -274,7 +285,7 @@ class App:
         if self.filter:
             scope = (scope + " " if scope else "") + f"/{self.filter}"
         if scope and room >= 14:
-            put(self.stdscr, 0, min(20, max(3, room - 12)),
+            put(self.stdscr, 0, min(22, max(3, room - 12)),
                 ellipsis(scope, 26), attr(C_SEL_ALT, True))
         put(self.stdscr, 0, w - 2, "◥", attr(C_NEON, True))
 
@@ -315,14 +326,15 @@ class App:
         log = db.day_log(self.conn, self.day)
 
         d = date.fromisoformat(self.day)
-        label = "  ◂ today" if self.day == today() else ""
-        put(self.stdscr, y, 2, d.strftime("%a %d %b %Y").upper() + label,
-            attr(C_ACCENT, True))
+        stamp = d.strftime("%Y.%m.%d %a").upper()
+        put(self.stdscr, y, 2, stamp, attr(C_ACCENT, True))
+        if self.day == today():
+            put(self.stdscr, y, 2 + cols(stamp) + 1, "◂", attr(C_NEON, True))
 
         x = 34
-        put(self.stdscr, y, x, f"◆ done {finished}/{total}",
+        put(self.stdscr, y, x, f"◆ {finished}/{total}",
             attr(C_DONE if finished else C_DIM))
-        x += 16
+        x += 10
 
         # A gauge, not a number: four hours of red is the full bar.
         segments = 10
@@ -334,7 +346,7 @@ class App:
         put(self.stdscr, y, x + 2 + filled, "▱" * (segments - filled), attr(C_DIM))
         put(self.stdscr, y, x + 3 + segments, fmt_minutes(distraction),
             attr(C_WARN if hot else C_DIM))
-        x += segments + 11
+        x += segments + 10
 
         # What you are on right now, and for how long — the one number the
         # board can show that changes while you watch it.
@@ -361,7 +373,7 @@ class App:
             put(self.stdscr, y, x, fx.sparkline(week), attr(C_VIOLET))
             x += 9
         put(self.stdscr, y, x, f"◇ {fmt_minutes(tracked)}", attr(C_DIM))
-        x += 12
+        x += 11
         if log.answered:
             room = max(10, (w - x - 6) // 2)
             put(self.stdscr, y, x, f"did: {ellipsis(log.did, room)}", attr(C_DONE))
@@ -383,7 +395,7 @@ class App:
 
         for ci, status in enumerate(STATUS_KEYS):
             x, items = 2 + ci * cw, cols[STATUS_KEYS[ci]]
-            head = f"{STATUS_LABELS[status].upper()}  {len(items):02d}"
+            head = f"{STATUS_LABELS[status].upper()} ▚ {len(items):02d}"
             put(self.stdscr, top, x, head,
                 attr(STATUS_COLOR[status], ci == self.col))
             live = ci == self.col
@@ -447,21 +459,20 @@ class App:
         hline(self.stdscr, top, 2, w - 4, attr(C_DIM))
         t = self.selected()
         if not t:
-            put(self.stdscr, top + 1, 2,
-                "nothing here — c captures a line, n opens the form", attr(C_DIM))
+            put(self.stdscr, top + 1, 2, "c capture · n new", attr(C_DIM))
             return
         paths = db.node_paths(self.conn)
         put(self.stdscr, top + 1, 2, t.title, attr(C_ACCENT, True))
-        bits = [f"goal: {paths.get(t.node_id, '—')}",
-                f"estimate: {ESTIMATE_LABELS.get(t.estimate, '—')}"]
+        bits = [paths.get(t.node_id, "—"),
+                ESTIMATE_LABELS.get(t.estimate, "—")]
         if t.actual_minutes:
             est = t.estimate_minutes
-            ratio = f" ({t.actual_minutes / est:.1f}× estimate)" if est else ""
-            bits.append(f"actual: {fmt_minutes(t.actual_minutes)}{ratio}")
-        put(self.stdscr, top + 2, 2, "  ".join(bits), attr(C_DIM))
-        put(self.stdscr, top + 3, 2, f"done when: {t.outcome or '—'}",
+            ratio = f" {t.actual_minutes / est:.1f}×" if est else ""
+            bits.append(f"actual {fmt_minutes(t.actual_minutes)}{ratio}")
+        put(self.stdscr, top + 2, 2, " ／ ".join(bits), attr(C_DIM))
+        put(self.stdscr, top + 3, 2, f"✓ {t.outcome or '—'}",
             attr(C_DONE if t.outcome else C_WARN))
-        put(self.stdscr, top + 4, 2, f"next action: {t.next_action or '—'}",
+        put(self.stdscr, top + 4, 2, f"▸ {t.next_action or '—'}",
             attr(C_DOING if t.next_action else C_WARN))
 
     def draw_calendar(self, top, height, w):
@@ -504,8 +515,7 @@ class App:
             y += 2
 
         put(self.stdscr, y, 2,
-            "✓ did something · · nothing · ! something you didn't · Enter opens that day",
-            attr(C_DIM))
+            "✓ did · · nothing · ! missed", attr(C_DIM))
         self.draw_day_answers(y + 2, w)
 
     def draw_day_answers(self, top, w):
@@ -544,10 +554,9 @@ class App:
     def draw_inbox(self, top, height, w):
         items = self.inbox()
         put(self.stdscr, top - 1, 2,
-            f"INBOX 受信  {len(items)} — captured, not yet on a day", attr(C_HEAD, True))
+            f"INBOX 受信 {len(items):02d}", attr(C_HEAD, True))
         if not items:
-            put(self.stdscr, top + 1, 2, "empty — press c to capture a thought",
-                attr(C_DIM))
+            put(self.stdscr, top + 1, 2, "c capture", attr(C_DIM))
             return
         self.list_row = min(self.list_row, len(items) - 1)
         room = max(1, (height - 3) // 2)
@@ -576,19 +585,16 @@ class App:
                     attr(C_WARN if age >= 14 else C_DIM))
             y += 2
         put(self.stdscr, top + height - 2, 2,
-            "s defines it and puts it on the open day · e defines · x deletes",
-            attr(C_DIM))
+            "s schedule · e define · x delete", attr(C_DIM))
 
     def draw_tree(self, top, height, w):
         items = self.visible_nodes()
         t = self.tree
         put(self.stdscr, top - 1, 2,
-            f"TREE 系統  {len(t.nodes)} — leaves are goals, branches are areas, "
-            f"nothing ever closes", attr(C_HEAD, True))
+            f"TREE 系統 {len(t.nodes):02d}", attr(C_HEAD, True))
         if not items:
             put(self.stdscr, top + 1, 2,
-                "empty — press A for a root (try PayCheck, Health, Learning)",
-                attr(C_DIM))
+                "A root · a child", attr(C_DIM))
             return
 
         self.list_row = min(self.list_row, len(items) - 1)
@@ -655,12 +661,11 @@ class App:
             y += 1
 
         put(self.stdscr, top + height - 2, 2,
-            "a child · A root · e rename · m move · f scope · x delete · h/l fold",
+            "a child · A root · e rename · m move · f scope · x delete",
             attr(C_DIM))
 
     def draw_review(self, top, height, w):
-        put(self.stdscr, top - 1, 2, "REVIEW 反省 — what the board would rather you didn't see",
-            attr(C_HEAD, True))
+        put(self.stdscr, top - 1, 2, "REVIEW 反省", attr(C_HEAD, True))
         y = top
         all_tasks = self.read_tasks()         # read once, used by two sections
         # Three sections sharing one screen, any of which can be long: a wide
@@ -669,10 +674,7 @@ class App:
         limit = top + height - 3
 
         # 1. Where the last seven days actually went.
-        put(self.stdscr, y, 2, "Where the last 7 days went", attr(C_ACCENT, True))
-        put(self.stdscr, y, 29,
-            "keyboard focus only — idle time and a locked screen don't count",
-            attr(C_DIM))
+        put(self.stdscr, y, 2, "FOCUS ／ 7 DAYS", attr(C_ACCENT, True))
         y += 1
         span = [add_days(today(), -i) for i in range(6, -1, -1)]   # oldest first
         matrix = db.usage_matrix(self.conn, span)
@@ -687,8 +689,7 @@ class App:
         y += 1
 
         if not matrix:
-            put(self.stdscr, y, 4, "nothing recorded — is space-track running?",
-                attr(C_DIM))
+            put(self.stdscr, y, 4, "no data", attr(C_DIM))
             y += 1
         for row in matrix[:max(1, min(5, limit - y - 6))]:
             color = APP_COLOR.get(row["color"], C_DIM)
@@ -719,14 +720,10 @@ class App:
 
         # 2. How wrong your estimates are, per size, in your own data.
         accuracy = estimate_accuracy(all_tasks)
-        put(self.stdscr, y, 2, "Estimate vs actual", attr(C_ACCENT, True))
-        put(self.stdscr, y, 24, "median, so one forgotten timer can't rewrite an hour",
-            attr(C_DIM))
+        put(self.stdscr, y, 2, "ESTIMATE ／ ACTUAL", attr(C_ACCENT, True))
         y += 1
         if not accuracy:
-            put(self.stdscr, y, 4,
-                "nothing finished and timed yet — time counts while a task is in Doing",
-                attr(C_DIM))
+            put(self.stdscr, y, 4, "nothing timed yet", attr(C_DIM))
             y += 2
         else:
             listed = [k for k in ESTIMATE_KEYS if k in accuracy]
@@ -757,10 +754,10 @@ class App:
         rotting = self.stale(all_tasks)
         if y >= limit:
             return                         # no room left; the sections above won
-        put(self.stdscr, y, 2, f"Needs a decision ({len(rotting)})", attr(C_ACCENT, True))
+        put(self.stdscr, y, 2, f"ROTTING {len(rotting):02d}", attr(C_ACCENT, True))
         y += 1
         if not rotting:
-            put(self.stdscr, y, 4, "nothing rotting", attr(C_DONE))
+            put(self.stdscr, y, 4, "clear", attr(C_DONE))
             return
         self.list_row = min(self.list_row, len(rotting) - 1)
         for i, (t, why) in enumerate(rotting):
@@ -773,7 +770,7 @@ class App:
             put(self.stdscr, y, max(4, w - len(why) - 4), why, attr(C_WARN))
             y += 1
         put(self.stdscr, top + height - 2, 2,
-            "x kills it · S sends it back to the inbox", attr(C_DIM))
+            "x kill · S inbox", attr(C_DIM))
 
     DAEMONS = [("ASK", "review-reminder.sh"), ("REPO", "repo-watch.sh")]
 
@@ -819,11 +816,11 @@ class App:
         """
         age = db.last_beat(self.conn)
         if age is None:
-            track, color = "TRACK OFF", C_WARN
+            track, color = "TRK OFF", C_WARN
         elif age < 180:
-            track, color = "TRACK", C_DONE
+            track, color = "TRK", C_DONE
         else:
-            track, color = f"TRACK {int(age // 60)}m", C_DOING
+            track, color = f"TRK {int(age // 60)}m", C_DOING
 
         put(self.stdscr, h - 3, 1, "◣", attr(C_NEON))
         x = 3
@@ -838,9 +835,11 @@ class App:
                 attr(tint))
             x += 3 + cols(name) + (0 if running else 4)
 
-        stamp = time.strftime("%a %H:%M")
-        if w - len(stamp) - 4 > x + 2:
-            put(self.stdscr, h - 3, w - len(stamp) - 4, stamp, attr(C_DIM))
+        stamp = time.strftime("%H:%M:%S")
+        if w - len(stamp) - 4 > x + 3:
+            put(self.stdscr, h - 3, x + 1, "─" * (w - len(stamp) - x - 6),
+                attr(C_FRAME))
+            put(self.stdscr, h - 3, w - len(stamp) - 4, stamp, attr(C_ACCENT))
         put(self.stdscr, h - 3, w - 2, "◢", attr(C_NEON))
 
     # Longest first; the footer takes the first one that fits.

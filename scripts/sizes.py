@@ -108,13 +108,16 @@ print()
 for view in ("today", "calendar", "inbox", "tree", "review"):
     for lines, cols in ((24, 80), (20, 60), (30, 100)):
         rows = [r for r in screen(view, lines, cols) if r.strip()]
-        rail = next((r for r in rows if "TRACK" in r), None)
+        # Anchored on the corner glyph, not on a label: the labels are copy
+        # and copy changes, and a test that breaks when a word is shortened
+        # tells you nothing about the layout it was written to protect.
+        rail = next((r for r in rows if r.lstrip().startswith("◣")), None)
         # The rail is drawn last, so it always survives — what gives a long
         # section away is its text sitting in the gaps between the rail's
         # pieces. Anything from a section on that row is a failure.
         debris = [m for m in ("Needs a decision", "n=", "→", "open ·", "↓ ")
                   if rail and m in rail]
-        if rail and rail.lstrip().startswith("◣") and not debris:
+        if rail and not debris:
             print(f"ok    {view} rail clean at {cols}x{lines}")
         else:
             bad += 1

@@ -12,10 +12,16 @@ because that yellow only reads as neon when almost nothing competes with it.
 In a terminal that allows it (kitty does) the exact hex values are written
 into colour slots rather than approximated.
 
-The title boots by pulling apart into its colour channels and settling, the
-rule under the header turns to hazard stripes once a red app has taken an
-hour of your day, and each view carries a quiet second name — 今日, 暦, 受信,
-系統, 反省. Effects are short and skippable; `SPACE_NO_FX=1` turns them off.
+The wordmark carries its colour channels at the edges — `▌KIAREZ▐` in
+magenta and cyan around the yellow. The title boots by pulling apart into
+those channels and settling, the rule under the header turns to hazard stripes
+once a red app has taken an hour of your day, and each view carries a quiet
+second name — 今日, 暦, 受信, 系統, 反省. Effects are short and skippable;
+`SPACE_NO_FX=1` turns them off.
+
+Headings are labels, not sentences: `TREE 系統 06`, `FOCUS ／ 7 DAYS`,
+`ROTTING 02`. Anything the screen was explaining to you for the hundredth
+time has been cut — the keys are on the footer, the meaning is in `?`.
 
 ```bash
 space           # the board
