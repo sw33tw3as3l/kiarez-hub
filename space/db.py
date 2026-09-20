@@ -281,6 +281,37 @@ def tasks(conn, *, day="__any__", status=None, node_id=None,
     return [_task(r) for r in conn.execute(sql, args)]
 
 
+def badge_counts(conn, day: str, stale_days: int, nagging_rolls: int,
+                 node_ids=None) -> dict[str, int]:
+    """The three numbers the view chips carry, counted in SQL.
+
+    Loading every task to count three things was most of the cost of drawing
+    a frame — on a few thousand tasks the board was building twelve thousand
+    objects per redraw to answer questions SQLite can answer by itself.
+    """
+    scope, args = "", []
+    if node_ids is not None:
+        if not node_ids:
+            return {"inbox": 0, "review": 0, "today": 0}
+        scope = f" and node_id in ({','.join('?' * len(node_ids))})"
+        args = list(node_ids)
+
+    cutoff = add_days(today(), -stale_days) + "T00:00:00+00:00"
+    row = conn.execute(f"""
+        select
+          (select count(*) from tasks
+            where day is null and status != 'done'{scope}) inbox,
+          (select count(*) from tasks
+            where status != 'done'{scope}
+              and (rolls >= ? or touched_at < ?)) review,
+          (select count(*) from tasks
+            where day = ?{scope}
+              and (node_id is null or outcome is null
+                   or next_action is null or estimate is null)) today
+    """, [*args, nagging_rolls, cutoff, day, *args]).fetchone()
+    return dict(row)
+
+
 def task(conn, task_id: str) -> Task | None:
     row = conn.execute("select * from tasks where id = ?", (task_id,)).fetchone()
     return _task(row) if row else None
@@ -600,6 +631,24 @@ def add_usage_hour(conn, date_str: str, hour: int, app: str, seconds: int) -> No
              set seconds = seconds + excluded.seconds""",
         (date_str, int(hour), app, int(seconds)))
     conn.commit()
+
+
+def usage_totals(conn, days: list[str], color: str | None = None) -> dict[str, int]:
+    """{day: seconds} across several days in one query, not one query per day."""
+    if not days:
+        return {}
+    marks = ",".join("?" * len(days))
+    if color is None:
+        rows = conn.execute(
+            f"select date, coalesce(sum(seconds), 0) s from app_usage "
+            f"where date in ({marks}) group by date", days)
+    else:
+        rows = conn.execute(
+            f"""select u.date, coalesce(sum(u.seconds), 0) s from app_usage u
+                  join watchlist w on w.app = u.app
+                 where u.date in ({marks}) and w.color = ?
+                 group by u.date""", [*days, color])
+    return {r["date"]: r["s"] for r in rows}
 
 
 def usage_detail(conn, app: str, date_str: str) -> dict:

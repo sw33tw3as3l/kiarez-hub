@@ -134,6 +134,16 @@ class App:
         self.list_row = min(self.list_row, len(items) - 1)
         return items[self.list_row][0]
 
+    def read_tasks(self, **kw):
+        """db.tasks for the current frame, materialised at most once."""
+        key = tuple(sorted(kw.items()))
+        cache = getattr(self, "_frame_cache", None)
+        if cache is None:
+            return db.tasks(self.conn, **kw)
+        if key not in cache:
+            cache[key] = db.tasks(self.conn, **kw)
+        return cache[key]
+
     def matches(self, text: str) -> bool:
         return not self.filter or self.filter in (text or "").lower()
 
@@ -156,7 +166,7 @@ class App:
                 or self.matches(t.next_action)]
 
     def columns(self):
-        items = self.keep(db.tasks(self.conn, day=self.day))
+        items = self.keep(self.read_tasks(day=self.day))
         return {s: [t for t in items if t.status == s] for s in STATUS_KEYS}
 
     def selected(self):
@@ -167,7 +177,7 @@ class App:
         return items[self.row]
 
     def inbox(self):
-        return self.keep(db.tasks(self.conn, inbox=True))
+        return self.keep(self.read_tasks(inbox=True))
 
     def selected_inbox(self):
         items = self.inbox()
@@ -176,10 +186,10 @@ class App:
         self.list_row = min(self.list_row, len(items) - 1)
         return items[self.list_row]
 
-    def stale(self):
+    def stale(self, tasks=None):
         """Work that has stopped being work: untouched, or endlessly rolled."""
         out = []
-        for t in db.tasks(self.conn):
+        for t in (self.read_tasks() if tasks is None else tasks):
             if t.status == "done":
                 continue
             if t.rolls >= NAGGING_ROLLS:
@@ -191,6 +201,10 @@ class App:
     # --- drawing ------------------------------------------------------------
 
     def draw(self):
+        # One frame, one set of reads. draw_day alone asked for the day's
+        # tasks three times over, and every view rebuilt the same objects for
+        # its chips; on a large board that was the whole frame budget.
+        self._frame_cache = {}
         self.stdscr.erase()
         h, w = self.stdscr.getmaxyx()
         self.draw_header(w)
@@ -202,19 +216,25 @@ class App:
         self.stdscr.refresh()
 
     def badges(self) -> dict[str, int]:
-        """What each view would tell you if you went there."""
-        out = {}
-        inbox = len(self.inbox())
-        if inbox:
-            out["inbox"] = inbox
-        rotting = len(self.stale())
-        if rotting:
-            out["review"] = rotting
-        undefined = sum(1 for t in db.tasks(self.conn, day=self.day)
-                        if not t.defined)
-        if undefined:
-            out["today"] = undefined
-        return out
+        """What each view would tell you if you went there.
+
+        Counted in SQL: these three numbers are on screen every frame and
+        loading the whole task table to work them out was most of the cost of
+        drawing one.
+        """
+        if self.filter:
+            # A text filter has to read the text, so count what the views
+            # themselves would actually show rather than asking SQL.
+            counts = {
+                "inbox": len(self.inbox()),
+                "review": len(self.stale()),
+                "today": sum(1 for group in self.columns().values()
+                             for t in group if not t.defined),
+            }
+        else:
+            counts = db.badge_counts(self.conn, self.day, STALE_DAYS,
+                                     NAGGING_ROLLS, self.scope_ids())
+        return {k: v for k, v in counts.items() if v}
 
     def draw_header(self, w):
         badges = self.badges()
@@ -288,7 +308,7 @@ class App:
 
     def day_strip(self, y, w):
         """The line that says whether this day was real."""
-        items = self.keep(db.tasks(self.conn, day=self.day))
+        items = self.keep(self.read_tasks(day=self.day))
         finished, total = done_count(items)
         distraction = db.usage_total(self.conn, self.day, color="red") // 60
         tracked = db.usage_total(self.conn, self.day) // 60
@@ -318,7 +338,7 @@ class App:
 
         # What you are on right now, and for how long — the one number the
         # board can show that changes while you watch it.
-        doing = [t for t in db.tasks(self.conn, day=self.day, status="doing")]
+        doing = [t for t in self.read_tasks(day=self.day, status="doing")]
         if doing:
             t = doing[0]
             run = fmt_minutes(t.actual_minutes)
@@ -334,8 +354,9 @@ class App:
                 attr(C_WARN if over else C_DOING))
             x += min(len(t.title) + len(run) + 6, max(18, w - x - 26))
 
-        week = [db.usage_total(self.conn, add_days(self.day, -i), color="red")
-                for i in range(6, -1, -1)]
+        span = [add_days(self.day, -i) for i in range(6, -1, -1)]
+        by_day = db.usage_totals(self.conn, span, color="red")
+        week = [by_day.get(d, 0) for d in span]
         if any(week):
             put(self.stdscr, y, x, fx.sparkline(week), attr(C_VIOLET))
             x += 9
@@ -577,6 +598,27 @@ class App:
             put(self.stdscr, top, 2, f"↑ {start} above", attr(C_DIM))
         y = top + (1 if start else 0)
 
+        # One pass over the tasks, then roll the counts up the tree — asking
+        # the database twice per visible node turns a full screen into three
+        # hundred queries, and a board with a few thousand tasks on it into a
+        # noticeable pause on every keystroke.
+        counts: dict[str, tuple[int, int]] = {}
+        for task in self.read_tasks():
+            done, total = counts.get(task.node_id, (0, 0))
+            counts[task.node_id] = (done + (task.status == "done"), total + 1)
+        subtree_counts: dict[str, tuple[int, int]] = {}
+
+        def roll_up(node_id: str) -> tuple[int, int]:
+            done, total = counts.get(node_id, (0, 0))
+            for child in t.kids(node_id):
+                cd, ct = roll_up(child.id)
+                done, total = done + cd, total + ct
+            subtree_counts[node_id] = (done, total)
+            return done, total
+
+        for root in t.kids(None):
+            roll_up(root.id)
+
         # Indentation is capped, otherwise a deep chain walks off the right
         # edge and the nodes simply stop being drawn. Past the cap the depth
         # is written as a number instead of as whitespace.
@@ -597,12 +639,11 @@ class App:
             on = i == self.list_row
             label = marker + node.name
 
-            own = db.tasks(self.conn, node_id=node.id)
-            sub = db.subtree_tasks(self.conn, node.id)
-            finished, total = done_count(sub)
+            own_done, own_total = counts.get(node.id, (0, 0))
+            finished, total = subtree_counts.get(node.id, (0, 0))
             tail = f"{total - finished} open · {finished} done"
-            if not leaf and len(sub) != len(own):
-                tail += f" · {len(sub) - len(own)} below"
+            if not leaf and total != own_total:
+                tail += f" · {total - own_total} below"
 
             # The name gets whatever the tail leaves, never a fixed guess.
             room = max(8, w - x - cols(tail) - 7)
@@ -621,6 +662,7 @@ class App:
         put(self.stdscr, top - 1, 2, "REVIEW 反省 — what the board would rather you didn't see",
             attr(C_HEAD, True))
         y = top
+        all_tasks = self.read_tasks()         # read once, used by two sections
         # Three sections sharing one screen, any of which can be long: a wide
         # estimate scale, a week of apps, a pile of rotting work. Each is
         # bounded and says what it hid, rather than running into the rail.
@@ -676,7 +718,7 @@ class App:
         y += 1
 
         # 2. How wrong your estimates are, per size, in your own data.
-        accuracy = estimate_accuracy(db.tasks(self.conn))
+        accuracy = estimate_accuracy(all_tasks)
         put(self.stdscr, y, 2, "Estimate vs actual", attr(C_ACCENT, True))
         put(self.stdscr, y, 24, "median, so one forgotten timer can't rewrite an hour",
             attr(C_DIM))
@@ -712,7 +754,7 @@ class App:
             y += 1
 
         # 3. What has stopped being work.
-        rotting = self.stale()
+        rotting = self.stale(all_tasks)
         if y >= limit:
             return                         # no room left; the sections above won
         put(self.stdscr, y, 2, f"Needs a decision ({len(rotting)})", attr(C_ACCENT, True))

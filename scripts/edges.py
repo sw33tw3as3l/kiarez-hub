@@ -184,6 +184,30 @@ check("the form still describes a retired size", lambda: (
         type("S", (), {"conn": c})(), "99m").endswith("kept for this task"))(),
     "asking about a retired size raised or said nothing useful"))
 
+def badges_agree():
+    """SQL counts the chips; this counts the same three things in python."""
+    from space.model import NAGGING_ROLLS, STALE_DAYS                # noqa: E402
+    db.capture(c, "badge inbox a")
+    db.capture(c, "badge inbox b")
+    db.capture(c, "badge undefined", day=today())
+    rolling = db.capture(c, "badge rolling", node_id=root, day=today(),
+                         estimate="1h", outcome="x", next_action="y")
+    db.update_task(c, rolling, rolls=NAGGING_ROLLS + 6)
+
+    tasks = db.tasks(c)
+    expected = {
+        "inbox": sum(1 for t in tasks if t.day is None and t.status != "done"),
+        "review": sum(1 for t in tasks if t.status != "done"
+                      and (t.rolls >= NAGGING_ROLLS
+                           or t.stale_days() >= STALE_DAYS)),
+        "today": sum(1 for t in tasks if t.day == today() and not t.defined),
+    }
+    got = db.badge_counts(c, today(), STALE_DAYS, NAGGING_ROLLS, None)
+    return got == expected, f"sql={got} python={expected}"
+
+
+check("counting badges in SQL matches counting them by hand", badges_agree)
+
 # --- a backup you cannot restore is decoration --------------------------------
 import pathlib as _path, subprocess as _sub, tempfile as _tmp        # noqa: E402
 

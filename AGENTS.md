@@ -114,6 +114,12 @@ Gotchas already paid for:
 - Animated widgets set `stdscr.timeout(ms)` and must treat `getch() == -1` as
   "draw another frame". Every path out of them restores `timeout(-1)`, or the
   main loop starts spinning.
+- **One frame, one set of reads.** `App.draw()` clears `_frame_cache` and every
+  view reads tasks through `App.read_tasks()`; the chips are counted by
+  `db.badge_counts()` in SQL. Before that, a three-thousand-task board built
+  twelve thousand Task objects per redraw and took 66ms a frame, which is a
+  third of the animation budget and felt like lag while typing. It is 20ms now.
+  If you add a view, read through the cache.
 - `App.alive()` decides whether the main loop animates or blocks. Keep it
   cheap and keep it honest: an idle board must block.
 - **Never hang periodic work off events you happen to care about.** The
