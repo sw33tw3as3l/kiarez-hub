@@ -19,12 +19,13 @@ once a red app has taken an hour of your day, and each view carries a quiet
 second name — 今日, 暦, 受信, 系統, 反省. Effects are short and skippable;
 `SPACE_NO_FX=1` turns them off.
 
-A faint diagonal sweep travels across the empty space behind the board, once
-every nine seconds. It only ever occupies the margin past the end of each
-line — a blank cell inside a line is not empty space, and a glyph landing
-between two words reads as corruption rather than depth. It stops drawing
-itself on a board too large to animate cheaply, and `SPACE_NO_FX=1` turns it
-off with everything else. It costs about a fifth of a percent of one core.
+A soft blue light drifts behind the board, crossing it over about a minute.
+It is drawn as background colour on cells that hold nothing — real light on
+the surface rather than characters pretending to be it — and it is round
+rather than oval because a terminal cell is roughly twice as tall as it is
+wide, so horizontal distance is halved before the falloff is worked out. It
+stops drawing itself on a board too large to animate cheaply, and
+`SPACE_NO_FX=1` turns it off. It costs about half a percent of one core.
 
 Headings are labels, not sentences: `TREE 系統 06`, `FOCUS ／ 7 DAYS`,
 `ROTTING 02`. Anything the screen was explaining to you for the hundredth

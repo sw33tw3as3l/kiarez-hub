@@ -18,7 +18,7 @@ from .model import (
     today,
 )
 from . import fx
-from .theme import fx_enabled  # noqa: F401
+from .theme import GLOW_PAIRS, fx_enabled  # noqa: F401
 from .ui import cols, fit, pad  # noqa: F401
 from .ui import (
     C_ACCENT, C_DEEP, C_DIM, C_DOING, C_DONE, C_FRAME, C_GHOST, C_HEAD,
@@ -248,44 +248,30 @@ class App:
     LIGHT_BUDGET_MS = 8.0
 
     def light_phase(self) -> float:
-        return (time.monotonic() % fx.LIGHT_PERIOD) / fx.LIGHT_PERIOD
+        return (time.monotonic() % fx.GLOW_PERIOD) / fx.GLOW_PERIOD
 
     def draw_light(self, h: int, w: int) -> None:
-        """The ambient sweep, in the empty space around the board.
+        """A soft blue light drifting behind the board.
 
-        Drawn last and only onto cells that are blank. Painting it first and
-        letting the board cover it sounds right and is not: the gaps inside a
-        line — between a card's edge and its text — stay uncovered, and a
-        glyph sitting in one of those reads as corruption rather than as
-        depth. Asking each of the ninety-odd cells what is already there is
-        cheaper than it sounds and exact.
+        Drawn as background colour on cells that hold nothing, so it is light
+        falling on the surface rather than characters pretending to be it. It
+        is round rather than elliptical because horizontal distance is halved
+        — a terminal cell is about twice as tall as it is wide, and a circle
+        measured in cells is a wide oval on screen.
 
-        Purely decorative, so it is the first thing to go: past the frame
-        budget it stops drawing, and SPACE_NO_FX turns it off outright.
+        Decoration, so it is the first thing to go: past the frame budget it
+        stops drawing, and SPACE_NO_FX turns it off outright.
         """
         if not self.light or self._draw_ms > self.LIGHT_BUDGET_MS:
             return
-
-        # Where each row's content ends. A blank cell is not the same thing as
-        # empty space: the gap between two words is blank and putting a glyph
-        # in it reads as corruption. The margin past the end of the line is
-        # the only place this belongs.
-        margin = []
-        for y in range(h):
+        cx, cy = fx.glow_centre(h, w, self.light_phase())
+        for y, x, level in fx.glow_cells(h, w, cx, cy):
             try:
-                row = self.stdscr.instr(y, 0, (w - 1) * 4).decode(
-                    "utf-8", "replace")
+                if self.stdscr.inch(y, x) & 0xFF != 32:
+                    continue                 # never light up occupied cells
             except curses.error:
-                row = ""
-            margin.append(len(row.rstrip()) + 2)
-
-        glyphs = fx.LIGHT_GLYPHS
-        for y, x, strength in fx.light_cells(h, w, self.light_phase()):
-            if x < margin[y]:
                 continue
-            glyph = glyphs[min(len(glyphs) - 1, int(strength * len(glyphs)))]
-            put(self.stdscr, y, x, glyph,
-                attr(C_VIOLET if strength > 0.6 else C_DEEP))
+            put(self.stdscr, y, x, " ", curses.color_pair(GLOW_PAIRS[3 - level]))
 
     def draw_header(self, w):
         badges = self.badges()

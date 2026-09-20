@@ -29,6 +29,13 @@ HEX = {
     "slate":   "#5c5470",
     "deep":    "#14121c",
     "ink":     "#08070c",
+    # Four steps of a blue that the ambient light is made of. These are
+    # backgrounds, not text: the glow is real light on the surface rather
+    # than characters pretending to be it.
+    "glow1":   "#0d1424",
+    "glow2":   "#122043",
+    "glow3":   "#1b3268",
+    "glow4":   "#27499b",
 }
 
 FALLBACK = {
@@ -38,6 +45,10 @@ FALLBACK = {
     "violet": curses.COLOR_MAGENTA, "ghost": curses.COLOR_WHITE,
     "slate": curses.COLOR_WHITE, "deep": curses.COLOR_BLACK,
     "ink": curses.COLOR_BLACK,
+    # Where colours cannot be redefined the glow collapses to two steps of
+    # blue; it is decoration and a rough version of it is fine.
+    "glow1": curses.COLOR_BLACK, "glow2": curses.COLOR_BLACK,
+    "glow3": curses.COLOR_BLUE, "glow4": curses.COLOR_BLUE,
 }
 
 FIRST_SLOT = 24          # leave the 16 ANSI colours and a little room alone
@@ -45,7 +56,11 @@ _slots: dict[str, int] = {}
 
 # --- pair ids, in the order they get registered -----------------------------
 (C_DIM, C_ACCENT, C_DONE, C_DOING, C_SEL, C_WARN, C_HEAD,
- C_NEON, C_FRAME, C_GHOST, C_SEL_ALT, C_VIOLET, C_DEEP) = range(1, 14)
+ C_NEON, C_FRAME, C_GHOST, C_SEL_ALT, C_VIOLET, C_DEEP,
+ C_GLOW1, C_GLOW2, C_GLOW3, C_GLOW4) = range(1, 18)
+
+# Brightest last, so an index walks outward from the centre of the light.
+GLOW_PAIRS = [C_GLOW4, C_GLOW3, C_GLOW2, C_GLOW1]
 
 PAIRS = [
     (C_DIM,     "slate",   None),
@@ -61,6 +76,10 @@ PAIRS = [
     (C_SEL_ALT, "ink",     "magenta"),
     (C_VIOLET,  "violet",  None),
     (C_DEEP,    "ghost",   "deep"),
+    (C_GLOW1,   "slate",   "glow1"),
+    (C_GLOW2,   "slate",   "glow2"),
+    (C_GLOW3,   "ghost",   "glow3"),
+    (C_GLOW4,   "ghost",   "glow4"),
 ]
 
 

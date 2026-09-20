@@ -118,12 +118,15 @@ Gotchas already paid for:
   way.** `db.badge_counts()` assembles three counts, each optionally scoped to
   a branch; a single flat argument list guessed at the order and crashed the
   moment a scope was active. Each subquery carries its own parameters now.
-- The ambient sweep (`App.draw_light`) is drawn **last**, into the margin past
-  each row's text, measured with `instr`. Drawing it first and letting the
-  board cover it leaves it sitting in the gaps inside a line; testing for a
-  blank cell has the same problem, because the space between two words is
-  blank. It is skipped once `_draw_ms` passes `LIGHT_BUDGET_MS` — decoration
-  is the first thing that should go when a frame gets expensive.
+- The ambient light (`App.draw_light`) is a radial glow drawn **last**, as
+  background colour on empty cells only. Two things it is easy to get wrong:
+  a terminal cell is about twice as tall as it is wide, so horizontal distance
+  must be halved or the "circle" is a wide oval; and the falloff wants to be
+  linear, since squaring it shrinks the visible light to a third of its radius
+  and loses the halo entirely. It is skipped once `_draw_ms` passes
+  `LIGHT_BUDGET_MS` — decoration is the first thing that should go when a
+  frame gets expensive. Every colour in `HEX` needs an entry in `FALLBACK`,
+  or `init()` raises on a terminal that cannot redefine colours.
 - **One frame, one set of reads.** `App.draw()` clears `_frame_cache` and every
   view reads tasks through `App.read_tasks()`; the chips are counted by
   `db.badge_counts()` in SQL. Before that, a three-thousand-task board built

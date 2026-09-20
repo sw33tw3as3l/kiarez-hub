@@ -160,33 +160,42 @@ def type_out(stdscr, y: int, x: int, text: str, attr: int, per_char: int = 8) ->
     put(stdscr, y, x, text + " ", attr)
 
 
-# The ambient sweep. A diagonal band of faint glyphs travelling across the
-# screen behind everything else — the one piece of motion here that is purely
-# decorative, which is why it is drawn first and everything else is drawn on
-# top of it, and why it backs off when the board gets expensive to draw.
-LIGHT_GLYPHS = "·⋅∙"
-LIGHT_PERIOD = 9.0          # seconds for one full sweep
-LIGHT_WIDTH = 14            # columns across the diagonal
+# The ambient light: a soft blue circle drifting behind the board. Terminal
+# cells are about twice as tall as they are wide, so horizontal distance is
+# halved — without that the "circle" is a wide ellipse.
+GLOW_PERIOD = 47.0          # seconds for one full drift
+GLOW_RADIUS = 15.0          # in rows
 
 
-def light_cells(h: int, w: int, phase: float):
-    """The cells the sweep occupies this frame, with an intensity each.
+def glow_centre(h: int, w: int, t: float) -> tuple[float, float]:
+    """Where the light is now. Two slow cycles at different rates, so the
+    path never repeats tightly enough to read as a loop."""
+    import math
+    x = (0.5 + 0.42 * math.sin(2 * math.pi * t)) * w
+    y = (0.5 + 0.38 * math.sin(2 * math.pi * t * 0.63 + 1.1)) * h
+    return x, y
 
-    Diagonal, so it reads as a pass of light rather than a wipe, and sparse,
-    so it is texture rather than a wall. Yields (y, x, strength 0..1).
-    """
-    reach = w + h
-    head = phase * (reach + LIGHT_WIDTH * 2) - LIGHT_WIDTH
-    for y in range(h):
-        # x + y is constant along a diagonal; walk the band around the head.
-        start = int(head - y)
-        for offset in range(LIGHT_WIDTH):
-            x = start + offset
-            if 0 <= x < w:
-                # Brightest in the middle of the band, faint at its edges.
-                middle = 1.0 - abs(offset - LIGHT_WIDTH / 2) / (LIGHT_WIDTH / 2)
-                if middle > 0.25 and (x + y) % 3 == 0:
-                    yield y, x, middle
+
+def glow_cells(h: int, w: int, cx: float, cy: float, radius: float = GLOW_RADIUS):
+    """Yield (y, x, level 0..3) for the cells the light falls on, brightest
+    at the centre. Level 3 is the core; beyond the radius there is nothing."""
+    import math
+    top, bottom = max(0, int(cy - radius)), min(h, int(cy + radius) + 1)
+    left = max(0, int(cx - radius * 2))
+    right = min(w, int(cx + radius * 2) + 1)
+    for y in range(top, bottom):
+        dy = y - cy
+        for x in range(left, right):
+            dx = (x - cx) / 2.0                 # cells are twice as tall
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist >= radius:
+                continue
+            # Falloff: a small bright core and a wide faint halo. Squaring
+            # this made the halo vanish and the light read as a blob a third
+            # of the size its radius says it is.
+            level = int((1.0 - dist / radius) * 4)
+            if level:
+                yield y, x, min(3, level)
 
 
 class Pulse:
