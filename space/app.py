@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import calendar
 import curses
+import os
 import random
 import time
-from datetime import date
+from datetime import date, datetime
 
 from . import db
 from .review import owed, questions_for, review_day
@@ -82,10 +83,12 @@ class App:
         if rolled:
             self.message_at = time.monotonic()
             self.message = f"{rolled} unfinished task(s) rolled forward to today"
-        # The board is the backstop for the day's question: if the notification
-        # was missed, opening the board says so. It never blocks you.
-        if not db.day_log(conn, review_day(conn=conn)).answered:
-            note = "the day's question is unanswered — press w"
+        # Anything owed is handled by the lock, so this is only about tonight:
+        # a nudge late in the day that today is not written down yet. Earlier
+        # than that it would be nagging about a day still being lived.
+        if (datetime.now().hour >= 20
+                and not db.day_log(conn, today()).answered):
+            note = "today is not written down yet — press w"
             self.message_at = time.monotonic()
             self.message = f"{self.message} · {note}" if self.message else note
 
@@ -725,23 +728,72 @@ class App:
         put(self.stdscr, top + height - 2, 2,
             "x kills it · S sends it back to the inbox", attr(C_DIM))
 
+    DAEMONS = [("ASK", "review-reminder.sh"), ("REPO", "repo-watch.sh")]
+
+    def daemons(self) -> dict[str, bool]:
+        """Which background pieces are running, cached for half a minute.
+
+        Read straight out of /proc rather than shelling out to pgrep: the
+        board redraws several times a second while anything is animating, and
+        a subprocess per frame to answer a question that changes hourly is a
+        poor trade.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_daemon_checked", -99) < 30:
+            return self._daemon_state
+        found = {name: False for name, _ in self.DAEMONS}
+        mine = str(os.getpid())
+        try:
+            for entry in os.listdir("/proc"):
+                if not entry.isdigit() or entry == mine:
+                    continue                 # never count ourselves as a daemon
+                try:
+                    with open(f"/proc/{entry}/cmdline", "rb") as handle:
+                        argv = handle.read().decode("utf-8", "replace").split("\0")
+                except OSError:
+                    continue
+                # The script has to BE an argument, not merely be mentioned in
+                # one: a shell running a command that names it is not it.
+                names = {arg.rsplit("/", 1)[-1] for arg in argv if arg}
+                for name, needle in self.DAEMONS:
+                    if needle in names:
+                        found[name] = True
+        except OSError:
+            pass
+        self._daemon_checked, self._daemon_state = now, found
+        return found
+
     def status_rail(self, h, w):
-        """The bottom rail: is anything actually recording, and what time is it."""
+        """The bottom rail: is anything actually recording, and what time is it.
+
+        All three background pieces, not just the tracker. Silence from any of
+        them is indistinguishable from calm, which is exactly how the tracker
+        once went an hour without recording anything.
+        """
         age = db.last_beat(self.conn)
         if age is None:
-            state, color = "TRACK OFFLINE", C_WARN
+            track, color = "TRACK OFF", C_WARN
         elif age < 180:
-            state, color = "TRACK ONLINE", C_DONE
+            track, color = "TRACK", C_DONE
         else:
-            state, color = f"TRACK STALE {int(age // 60)}m", C_DOING
+            track, color = f"TRACK {int(age // 60)}m", C_DOING
 
         put(self.stdscr, h - 3, 1, "◣", attr(C_NEON))
-        put(self.stdscr, h - 3, 3, "▰" if color is C_DONE else "▱", attr(color))
-        put(self.stdscr, h - 3, 5, state, attr(color))
-        put(self.stdscr, h - 3, 6 + len(state), "◈", attr(C_VIOLET))
+        x = 3
+        put(self.stdscr, h - 3, x, "▰" if color is C_DONE else "▱", attr(color))
+        put(self.stdscr, h - 3, x + 2, track, attr(color))
+        x += 3 + cols(track)
+
+        for name, running in self.daemons().items():
+            tint = C_DONE if running else C_WARN
+            put(self.stdscr, h - 3, x, "▰" if running else "▱", attr(tint))
+            put(self.stdscr, h - 3, x + 2, name if running else f"{name} OFF",
+                attr(tint))
+            x += 3 + cols(name) + (0 if running else 4)
 
         stamp = time.strftime("%a %H:%M")
-        put(self.stdscr, h - 3, max(10, w - len(stamp) - 4), stamp, attr(C_DIM))
+        if w - len(stamp) - 4 > x + 2:
+            put(self.stdscr, h - 3, w - len(stamp) - 4, stamp, attr(C_DIM))
         put(self.stdscr, h - 3, w - 2, "◢", attr(C_NEON))
 
     # Longest first; the footer takes the first one that fits.

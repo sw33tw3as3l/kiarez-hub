@@ -83,6 +83,13 @@ Three things run in the background, all started from
 (the day's question) and `repo-watch.sh` (GitHub activity).
 
 Gotchas already paid for:
+- **`gh api --jq` writes its error body to STDOUT.** A 404 or an expired
+  token looks exactly like data unless the exit status is checked — the repo
+  watcher wrote the error JSON into its state file as the newest id, which
+  would have made the next good poll announce everything it could see.
+- **Scanning /proc for a daemon matches anything that merely mentions it.**
+  Compare against argv basenames and skip your own pid, or the board reports a
+  daemon as running because a shell command had its name in it.
 - **`dunstify` blocks until its notification is dismissed or expires.** Any
   loop that notifies must do the waiting in a subshell, or it stops doing its
   job for as long as its own notification is on screen — the repo watcher

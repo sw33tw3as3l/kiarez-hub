@@ -300,8 +300,14 @@ notification opens the activity page.
 
 It checks every five minutes (`SPACE_WATCH_EVERY`), says nothing on its first
 run beyond remembering where it started, and says nothing at all when nothing
-has happened. It starts with your Hyprland session alongside the tracker and
-the reminder.
+has happened — except that silence never means "I broke": three failed reads
+in a row and it says so, and says so again when it recovers. It starts with
+your Hyprland session alongside the tracker and the reminder, and the board's
+bottom rail shows whether all three are running:
+
+```
+◣ ▰ TRACK ▰ ASK ▰ REPO                                    Sun 14:19  ◢
+```
 
 ## Data
 
