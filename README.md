@@ -19,29 +19,18 @@ once a red app has taken an hour of your day, and each view carries a quiet
 second name — 今日, 暦, 受信, 系統, 反省. Effects are short and skippable;
 `SPACE_NO_FX=1` turns them off.
 
-A soft blue light drifts behind the board, crossing it over about a minute.
+Two lights sit at the left and right edges, drifting slowly up and down —
+magenta on one side, cyan on the other. In kitty they are real images: half
+an orb each, flat edge against the screen edge so only the falloff shows and
+it reads as light coming in from outside the window. They stay in the margins
+and never cross the middle, because everything worth reading is there and a
+light passing over it is a light in the way. A full backdrop behind the whole
+board was tried and had exactly that problem: however dim, it competes with
+the text.
 
-In kitty it is an actual image — an RGBA sprite with a smooth falloff,
-composited below the text layer through the terminal graphics protocol, at
-pixel resolution rather than cell resolution. It is transmitted once,
-compressed, and afterwards only moved, so a frame costs a few dozen bytes.
-Anywhere else it falls back to tinting empty cells blue, which is as close to
-light as a character grid gets.
-
-Behind the light, kitty also gets a backdrop: a city at night, drawn from
-nothing — a vertical wash, two slabs of far-off neon, a band of haze on the
-horizon, a perspective grid running to it, scanlines, and a vignette. It is
-generated once at startup and re-placed only when the window changes size.
-Its brightest pixel is about a seventh of full brightness, because the board
-has to stay readable on top of it; the vignette takes the middle down further
-still, where the columns live. The lock screen gets the backdrop too, but not
-the moving light — it is a stop, and something moving on it would read as an
-invitation to wait.
-
-Either way it is round, which takes care in a terminal: a cell is about twice
-as tall as it is wide, so the circle has to be drawn twice as wide in cells as
-it is tall. It stops drawing on a board too large to animate cheaply,
-`SPACE_NO_FX=1` turns it off, and `SPACE_NO_GRAPHICS=1` keeps the fallback.
+Outside kitty the same idea runs one layer coarser — empty cells near an edge
+tinted blue. Either way it stops on a board too large to animate cheaply,
+`SPACE_NO_FX=1` turns it off, and `SPACE_NO_GRAPHICS=1` forces the fallback.
 
 Headings are labels, not sentences: `TREE 系統 06`, `FOCUS ／ 7 DAYS`,
 `ROTTING 02`. Anything the screen was explaining to you for the hundredth

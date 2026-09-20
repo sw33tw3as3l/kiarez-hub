@@ -123,16 +123,12 @@ Gotchas already paid for:
   good — a glow frozen in a corner, which is what any board big enough to trip
   the budget got. `clear()` guards on `placed` alone; including `sent` sent a
   delete every frame forever.
-- `space/glow.py` also draws the backdrop — procedural, no assets, `DIM`
-  takes the finished image down to a seventh of full brightness because text
-  has to win against it. Sent once, re-placed only on resize, and its z sits
-  just under the light's. Both stay above -1073741824, or the terminal's own
-  background hides them.
-- `space/glow.py` is the real light: a kitty graphics sprite placed below the
-  text (`z` well under zero puts it under cell backgrounds too). Transmitted
-  once with `a=t` and zlib, then only moved with `a=p` after an `a=d` — never
-  re-sent. The sprite is square, so the placement box must be twice as wide in
-  cells as it is tall. `forget()` on the way out or the image outlives the app.
+- `space/glow.py` is the real light: two kitty graphics sprites, half an orb
+  each, placed at the screen edges below the text. `z` under zero puts them
+  below text; stay above -1073741824 or the terminal background hides them.
+  Transmitted once with `a=t` and zlib, then only moved with `a=p` after an
+  `a=d` — never re-sent. The sprite is 1:2 in pixels, so its placement box is
+  square in cells. `forget()` on the way out, or the images outlive the app.
 - The fallback ambient light (`App.draw_light`) is a radial glow drawn **last**, as
   background colour on empty cells only. Two things it is easy to get wrong:
   a terminal cell is about twice as tall as it is wide, so horizontal distance

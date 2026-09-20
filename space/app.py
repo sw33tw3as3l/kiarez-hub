@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import curses
+import math
 import os
 import random
 import time
@@ -257,45 +258,37 @@ class App:
         return (time.monotonic() % fx.GLOW_PERIOD) / fx.GLOW_PERIOD
 
     def draw_light(self, h: int, w: int) -> None:
-        """A soft blue light drifting behind the board.
+        """Two lights at the edges of the screen, drifting up and down.
 
-        Drawn as background colour on cells that hold nothing, so it is light
-        falling on the surface rather than characters pretending to be it. It
-        is round rather than elliptical because horizontal distance is halved
-        — a terminal cell is about twice as tall as it is wide, and a circle
-        measured in cells is a wide oval on screen.
+        They stay in the margins and never cross the middle: everything worth
+        reading is there, and a light passing over it is a light in the way. A
+        backdrop behind the whole board was tried first and had exactly that
+        problem — however dim, it is competing with the text.
 
         Decoration, so it is the first thing to go: past the frame budget it
-        stops drawing, and SPACE_NO_FX turns it off outright.
+        stops and takes its placements with it, and SPACE_NO_FX turns it off.
         """
         if not self.light or self._draw_ms > self.LIGHT_BUDGET_MS:
-            # Stopping has to take the light with it. Returning here left the
-            # last placement sitting on screen for good — a glow frozen in one
-            # corner is worse than none, and it is exactly what a board big
-            # enough to trip the budget got. The backdrop can stay: it is
-            # static, so it costs nothing to leave where it is.
             if self.real_light is not None:
                 self.real_light.clear()
             return
-        cx, cy = fx.glow_centre(h, w, self.light_phase())
 
         if self.real_light is not None:
-            # The city sits under everything and only changes when the window
-            # does; the light moves over it.
-            self.real_light.backdrop(w, h)
-            # Real pixels, below everything. The sprite is square, so the box
-            # it is scaled into has to be twice as wide as it is tall or the
-            # circle comes out as a wide oval — the same cell-aspect trap as
-            # the character version, one layer down.
-            down = max(5, min(h - 2, h // 3))
-            across = max(10, min(w - 2, down * 2))
-            self.real_light.move(
-                max(0, min(h - 1, int(cy - down / 2))),
-                max(0, min(w - 1, int(cx - across / 2))),
-                across, down)
+            phase = self.light_phase()
+            span = max(6, h // 2)
+            for side, speed, offset in (("left", 1.0, 0.0), ("right", 0.73, 0.4)):
+                travel = math.sin(2 * math.pi * (phase * speed + offset))
+                top = max(0, min(h - span,
+                                 int((0.5 + 0.34 * travel) * h - span / 2)))
+                col = 0 if side == "left" else max(0, w - span - 1)
+                self.real_light.move(side, top, col, span, span)
             return
 
-        for y, x, level in fx.glow_cells(h, w, cx, cy):
+        # No graphics: tint empty cells near one edge instead — the same idea,
+        # one layer coarser.
+        _, cy = fx.glow_centre(h, w, self.light_phase())
+        edge = 0.0 if (self.light_phase() % 1.0) < 0.5 else float(w)
+        for y, x, level in fx.glow_cells(h, w, edge, cy):
             try:
                 if self.stdscr.inch(y, x) & 0xFF != 32:
                     continue                 # never light up occupied cells
@@ -1476,10 +1469,6 @@ class App:
 
             h, w = self.stdscr.getmaxyx()
             self.stdscr.erase()
-            # The city, but not the drifting light: this screen is a stop, and
-            # something moving on it would read as an invitation to wait.
-            if self.real_light is not None:
-                self.real_light.backdrop(w, h)
             width = max(24, min(w - 4, 76))
 
             items = db.tasks(self.conn, day=day)
