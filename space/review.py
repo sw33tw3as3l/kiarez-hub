@@ -195,19 +195,25 @@ def weekly(conn, day: str) -> None:
 
 
 def pending(conn, day: str | None = None) -> bool:
-    """Is there anything still answerable for `day`?
+    """Is anything actually owed — for `day`, or at all?
 
-    Naming the day matters for anything that loops: "is the current review day
-    unanswered" becomes true again the moment the window rolls over, which
-    would turn a reminder into an all-day nag about a day not yet due.
+    Owed, not merely unanswered. Today is unanswered for most of its length
+    and is not owed at any point in it, so a reminder built on "unanswered"
+    would announce a brand new day the moment you settled the old one.
     """
-    current = review_day(conn=conn)
-    if day is not None and day != current:
-        return False                      # that window has closed
-    day = day or current
-    if not db.day_log(conn, day).answered:
+    due = owed(conn)
+    if day is not None:
+        if day == due:
+            return True
+        # A Sunday that has been answered can still owe its weekly review.
+        return (day == yesterday() and is_sunday(day)
+                and db.day_log(conn, day).answered
+                and not db.week_log(conn, day).answered)
+    if due:
         return True
-    return is_sunday(day) and not db.week_log(conn, day).answered
+    last = yesterday()
+    return (is_sunday(last) and db.day_log(conn, last).answered
+            and not db.week_log(conn, last).answered)
 
 
 def owed(conn) -> str | None:

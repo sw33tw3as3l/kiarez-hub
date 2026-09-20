@@ -286,6 +286,23 @@ runs every CLI command, and then — the part that matters — does things and
 asks the database whether they happened. A form can go completely dead
 without raising anything.
 
+## Watching a repository
+
+```bash
+./scripts/repo-watch.sh                        # AriaHemmati/PayCheck
+SPACE_WATCH_REPO=owner/name ./scripts/repo-watch.sh
+```
+
+Notifies when anyone touches a repository — the same feed as its `/activity`
+page: pushes, branch creations and deletions, force-pushes, merges. It works
+on private repositories, through the `gh` CLI's credentials. Clicking the
+notification opens the activity page.
+
+It checks every five minutes (`SPACE_WATCH_EVERY`), says nothing on its first
+run beyond remembering where it started, and says nothing at all when nothing
+has happened. It starts with your Hyprland session alongside the tracker and
+the reminder.
+
 ## Data
 
 `~/.kiarez-space/data.db`, or wherever `KIAREZ_SPACE_DB` points.

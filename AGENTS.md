@@ -78,7 +78,15 @@ Rules that matter:
 - Unfinished tasks roll to today and increment `rolls`.
 - No third-party dependencies. The point is that it starts instantly.
 
+Three things run in the background, all started from
+`~/.config/hypr/custom/execs.lua`: `space-track` (focus), `review-reminder.sh`
+(the day's question) and `repo-watch.sh` (GitHub activity).
+
 Gotchas already paid for:
+- **`dunstify` blocks until its notification is dismissed or expires.** Any
+  loop that notifies must do the waiting in a subshell, or it stops doing its
+  job for as long as its own notification is on screen — the repo watcher
+  never recorded what it had seen because it was still inside the call.
 - **Three different units, all called "length".** `curses.addnstr`'s limit is
   BYTES, screen positions are COLUMNS, and `len()` is CODEPOINTS. A CJK
   character is 1 codepoint, 3 bytes and 2 columns. `put()` trims by column via
