@@ -20,12 +20,18 @@ second name — 今日, 暦, 受信, 系統, 反省. Effects are short and skipp
 `SPACE_NO_FX=1` turns them off.
 
 A soft blue light drifts behind the board, crossing it over about a minute.
-It is drawn as background colour on cells that hold nothing — real light on
-the surface rather than characters pretending to be it — and it is round
-rather than oval because a terminal cell is roughly twice as tall as it is
-wide, so horizontal distance is halved before the falloff is worked out. It
-stops drawing itself on a board too large to animate cheaply, and
-`SPACE_NO_FX=1` turns it off. It costs about half a percent of one core.
+
+In kitty it is an actual image — an RGBA sprite with a smooth falloff,
+composited below the text layer through the terminal graphics protocol, at
+pixel resolution rather than cell resolution. It is transmitted once,
+compressed, and afterwards only moved, so a frame costs a few dozen bytes.
+Anywhere else it falls back to tinting empty cells blue, which is as close to
+light as a character grid gets.
+
+Either way it is round, which takes care in a terminal: a cell is about twice
+as tall as it is wide, so the circle has to be drawn twice as wide in cells as
+it is tall. It stops drawing on a board too large to animate cheaply,
+`SPACE_NO_FX=1` turns it off, and `SPACE_NO_GRAPHICS=1` keeps the fallback.
 
 Headings are labels, not sentences: `TREE 系統 06`, `FOCUS ／ 7 DAYS`,
 `ROTTING 02`. Anything the screen was explaining to you for the hundredth

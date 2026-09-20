@@ -118,7 +118,12 @@ Gotchas already paid for:
   way.** `db.badge_counts()` assembles three counts, each optionally scoped to
   a branch; a single flat argument list guessed at the order and crashed the
   moment a scope was active. Each subquery carries its own parameters now.
-- The ambient light (`App.draw_light`) is a radial glow drawn **last**, as
+- `space/glow.py` is the real light: a kitty graphics sprite placed below the
+  text (`z` well under zero puts it under cell backgrounds too). Transmitted
+  once with `a=t` and zlib, then only moved with `a=p` after an `a=d` — never
+  re-sent. The sprite is square, so the placement box must be twice as wide in
+  cells as it is tall. `forget()` on the way out or the image outlives the app.
+- The fallback ambient light (`App.draw_light`) is a radial glow drawn **last**, as
   background colour on empty cells only. Two things it is easy to get wrong:
   a terminal cell is about twice as tall as it is wide, so horizontal distance
   must be halved or the "circle" is a wide oval; and the falloff wants to be

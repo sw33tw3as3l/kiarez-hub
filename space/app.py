@@ -18,6 +18,7 @@ from .model import (
     today,
 )
 from . import fx
+from . import glow
 from .theme import GLOW_PAIRS, fx_enabled  # noqa: F401
 from .ui import cols, fit, pad  # noqa: F401
 from .ui import (
@@ -80,6 +81,11 @@ class App:
         self.node_filter: str | None = None
         self.light = fx.fx_enabled()
         self._draw_ms = 0.0
+        # A terminal that can composite an image gets a real light; the rest
+        # get empty cells tinted blue, which is the best a character grid can
+        # manage.
+        self.real_light = glow.KittyGlow() if (
+            self.light and glow.supported()) else None
         self.cal_cursor = date.fromisoformat(self.day)
         self.collapsed: set[str] = set()
         rolled = db.roll_forward(conn)
@@ -265,6 +271,20 @@ class App:
         if not self.light or self._draw_ms > self.LIGHT_BUDGET_MS:
             return
         cx, cy = fx.glow_centre(h, w, self.light_phase())
+
+        if self.real_light is not None:
+            # Real pixels, below everything. The sprite is square, so the box
+            # it is scaled into has to be twice as wide as it is tall or the
+            # circle comes out as a wide oval — the same cell-aspect trap as
+            # the character version, one layer down.
+            down = max(5, min(h - 2, h // 3))
+            across = max(10, min(w - 2, down * 2))
+            self.real_light.move(
+                max(0, min(h - 1, int(cy - down / 2))),
+                max(0, min(w - 1, int(cx - across / 2))),
+                across, down)
+            return
+
         for y, x, level in fx.glow_cells(h, w, cx, cy):
             try:
                 if self.stdscr.inch(y, x) & 0xFF != 32:
@@ -1562,6 +1582,13 @@ class App:
         self.stdscr.keypad(True)
         if not self.locked_out():
             return
+        try:
+            self.loop()
+        finally:
+            if self.real_light is not None:
+                self.real_light.forget()   # leave no image behind on exit
+
+    def loop(self):
         while True:
             self.draw()
             # The sweep is the one thing that moves with nothing happening,
