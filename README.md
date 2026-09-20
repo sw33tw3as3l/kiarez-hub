@@ -28,6 +28,14 @@ compressed, and afterwards only moved, so a frame costs a few dozen bytes.
 Anywhere else it falls back to tinting empty cells blue, which is as close to
 light as a character grid gets.
 
+Behind the light, kitty also gets a backdrop: a city at night, drawn from
+nothing — a vertical wash, two slabs of far-off neon, a band of haze on the
+horizon, a perspective grid running to it, scanlines, and a vignette. It is
+generated once at startup and re-placed only when the window changes size.
+Its brightest pixel is about a seventh of full brightness, because the board
+has to stay readable on top of it; the vignette takes the middle down further
+still, where the columns live.
+
 Either way it is round, which takes care in a terminal: a cell is about twice
 as tall as it is wide, so the circle has to be drawn twice as wide in cells as
 it is tall. It stops drawing on a board too large to animate cheaply,

@@ -118,6 +118,11 @@ Gotchas already paid for:
   way.** `db.badge_counts()` assembles three counts, each optionally scoped to
   a branch; a single flat argument list guessed at the order and crashed the
   moment a scope was active. Each subquery carries its own parameters now.
+- `space/glow.py` also draws the backdrop — procedural, no assets, `DIM`
+  takes the finished image down to a seventh of full brightness because text
+  has to win against it. Sent once, re-placed only on resize, and its z sits
+  just under the light's. Both stay above -1073741824, or the terminal's own
+  background hides them.
 - `space/glow.py` is the real light: a kitty graphics sprite placed below the
   text (`z` well under zero puts it under cell backgrounds too). Transmitted
   once with `a=t` and zlib, then only moved with `a=p` after an `a=d` — never

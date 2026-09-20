@@ -273,6 +273,9 @@ class App:
         cx, cy = fx.glow_centre(h, w, self.light_phase())
 
         if self.real_light is not None:
+            # The city sits under everything and only changes when the window
+            # does; the light moves over it.
+            self.real_light.backdrop(w, h)
             # Real pixels, below everything. The sprite is square, so the box
             # it is scaled into has to be twice as wide as it is tall or the
             # circle comes out as a wide oval — the same cell-aspect trap as
