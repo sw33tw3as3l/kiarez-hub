@@ -289,26 +289,35 @@ def badge_counts(conn, day: str, stale_days: int, nagging_rolls: int,
     a frame — on a few thousand tasks the board was building twelve thousand
     objects per redraw to answer questions SQLite can answer by itself.
     """
-    scope, args = "", []
+    scope, scope_args = "", []
     if node_ids is not None:
-        if not node_ids:
+        ids = list(node_ids)
+        if not ids:
             return {"inbox": 0, "review": 0, "today": 0}
-        scope = f" and node_id in ({','.join('?' * len(node_ids))})"
-        args = list(node_ids)
+        scope = f" and node_id in ({','.join('?' * len(ids))})"
+        scope_args = ids
 
     cutoff = add_days(today(), -stale_days) + "T00:00:00+00:00"
-    row = conn.execute(f"""
-        select
-          (select count(*) from tasks
-            where day is null and status != 'done'{scope}) inbox,
-          (select count(*) from tasks
-            where status != 'done'{scope}
-              and (rolls >= ? or touched_at < ?)) review,
-          (select count(*) from tasks
-            where day = ?{scope}
-              and (node_id is null or outcome is null
-                   or next_action is null or estimate is null)) today
-    """, [*args, nagging_rolls, cutoff, day, *args]).fetchone()
+    # Each count carries its own parameters. Concatenating three subqueries
+    # and then guessing at one flat argument list is how the scoped version
+    # of this ended up binding the wrong values — and then raising, which was
+    # the lucky outcome.
+    parts = [
+        (f"select count(*) from tasks "
+         f"where day is null and status != 'done'{scope}", list(scope_args)),
+        (f"select count(*) from tasks where status != 'done'{scope} "
+         f"and (rolls >= ? or touched_at < ?)",
+         [*scope_args, nagging_rolls, cutoff]),
+        (f"select count(*) from tasks where day = ?{scope} "
+         f"and (node_id is null or outcome is null "
+         f"or next_action is null or estimate is null)",
+         [day, *scope_args]),
+    ]
+    sql = "select " + ", ".join(
+        f"({query}) {name}" for (query, _), name
+        in zip(parts, ("inbox", "review", "today")))
+    args = [value for _, values in parts for value in values]
+    row = conn.execute(sql, args).fetchone()
     return dict(row)
 
 

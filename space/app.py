@@ -47,6 +47,7 @@ HELP = [
     ("c", "capture — one line, no fields, from any view"),
     ("/", "filter the board · empty clears it"),
     ("f / F", "in Tree: scope the board to that branch / clear the scope"),
+    ("X / I", "in Review: kill or re-inbox everything rotting"),
     ("j k / h l", "move · J K reorder"),
     ("space", "advance status — refuses to start an undefined task"),
     ("e / Enter", "define or edit"),
@@ -770,7 +771,7 @@ class App:
             put(self.stdscr, y, max(4, w - len(why) - 4), why, attr(C_WARN))
             y += 1
         put(self.stdscr, top + height - 2, 2,
-            "x kill · S inbox", attr(C_DIM))
+            "x kill · S inbox · X kill all · I inbox all", attr(C_DIM))
 
     DAEMONS = [("ASK", "review-reminder.sh"), ("REPO", "repo-watch.sh")]
 
@@ -1376,6 +1377,22 @@ class App:
             db.update_task(self.conn, pick.id, day=None, rolls=0)
             self.message_at = time.monotonic()
             self.message = "back to the inbox, roll count reset"
+        elif ch in (ord("X"), ord("I")) and rotting:
+            # Triage in one go. A list of forty things you have been pushing
+            # forward for a month is not a list you clear one keystroke at a
+            # time, and leaving it uncleared is how the view stops being read.
+            kill = ch == ord("X")
+            what = "kill" if kill else "send back to the inbox"
+            if confirm(self.stdscr, f"{what} all {len(rotting)}?"):
+                for task, _ in rotting:
+                    if kill:
+                        db.delete(self.conn, "tasks", task.id)
+                    else:
+                        db.update_task(self.conn, task.id, day=None, rolls=0)
+                self.list_row = 0
+                self.message_at = time.monotonic()
+                self.message = (f"{len(rotting)} killed" if kill
+                                else f"{len(rotting)} back in the inbox")
         return True
 
     def locked_out(self) -> bool:

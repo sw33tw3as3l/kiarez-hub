@@ -114,6 +114,10 @@ Gotchas already paid for:
 - Animated widgets set `stdscr.timeout(ms)` and must treat `getch() == -1` as
   "draw another frame". Every path out of them restores `timeout(-1)`, or the
   main loop starts spinning.
+- **A query built by string concatenation needs its parameters built the same
+  way.** `db.badge_counts()` assembles three counts, each optionally scoped to
+  a branch; a single flat argument list guessed at the order and crashed the
+  moment a scope was active. Each subquery carries its own parameters now.
 - **One frame, one set of reads.** `App.draw()` clears `_frame_cache` and every
   view reads tasks through `App.read_tasks()`; the chips are counted by
   `db.badge_counts()` in SQL. Before that, a three-thousand-task board built

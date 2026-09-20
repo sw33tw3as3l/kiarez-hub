@@ -208,6 +208,23 @@ def badges_agree():
 
 check("counting badges in SQL matches counting them by hand", badges_agree)
 
+
+def scoped_badges():
+    """The same counts, restricted to one branch of the tree."""
+    from space.model import NAGGING_ROLLS, STALE_DAYS                # noqa: E402
+    alpha = db.add_node(c, "Scoped alpha")
+    beta = db.add_node(c, "Scoped beta")
+    db.capture(c, "alpha inbox", node_id=alpha)
+    db.capture(c, "alpha undefined", node_id=alpha, day=today())
+    db.capture(c, "beta inbox", node_id=beta)
+
+    got = db.badge_counts(c, today(), STALE_DAYS, NAGGING_ROLLS, {alpha})
+    want = {"inbox": 1, "review": 0, "today": 1}
+    return got == want, f"sql={got} expected={want}"
+
+
+check("badge counts honour a branch scope", scoped_badges)
+
 # --- a backup you cannot restore is decoration --------------------------------
 import pathlib as _path, subprocess as _sub, tempfile as _tmp        # noqa: E402
 

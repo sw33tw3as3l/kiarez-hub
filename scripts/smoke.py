@@ -37,7 +37,10 @@ JOURNEYS = [
     ("help", "?x"),
     ("go to a date", "g" + "+3" + "\r" + "g" + "-2" + "\r" + "t"),
     ("filter", "/" + "a" + "\r" + "/" + "\r"),
-    ("scope to a branch", "4f" + "1" + "F"),
+    # Build a node first: pressing f with an empty tree scopes to nothing and
+    # exercises none of the scoped queries, which is how a crash in them
+    # survived a passing suite.
+    ("scope to a branch", "4A" + "Area" + "\r" + "f" + "1" + "5" + "3" + "F"),
     ("new task from the inbox", "3n\x1b"),
     ("review", "5jk"),
 ]
@@ -230,6 +233,31 @@ def check_outcomes(failures: list) -> None:
                row and row["day"] == _d.date.today().isoformat()
                and row["estimate"] == "1h",
                f"row={dict(row) if row else None}")
+
+        # Bulk triage must take the whole rotting list, and only it.
+        db = f"{tmp}/outcome-bulk.db"
+        env = dict(os.environ, KIAREZ_SPACE_DB=db)
+        subprocess.run([str(REPO / "bin/space-cli"), "node-add", "Work"],
+                       capture_output=True, env=env)
+        sys.path.insert(0, str(REPO))
+        from space import db as store
+        from space.model import today as _today
+        conn0 = store.connect(db)
+        for i in range(4):
+            t = store.capture(conn0, f"rotting {i}", node_id=store.nodes(conn0)[0].id,
+                              day=_today(), estimate="1h", outcome="x",
+                              next_action="y")
+            store.update_task(conn0, t, rolls=9)
+        store.capture(conn0, "healthy", node_id=store.nodes(conn0)[0].id,
+                      day=_today(), estimate="1h", outcome="x", next_action="y")
+        conn0.close()
+        conn = board(db, "5Iy")
+        rows = conn.execute("select title, day from tasks order by title").fetchall()
+        moved = {r["title"]: r["day"] for r in rows}
+        expect("I re-inboxes every rotting task and nothing else",
+               len(moved) == 5 and moved["healthy"] is not None
+               and all(moved[f"rotting {i}"] is None for i in range(4)),
+               f"{moved}")
 
         # g must actually move the board to the day it names.
         db = f"{tmp}/outcome-goto.db"

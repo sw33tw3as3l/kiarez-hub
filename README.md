@@ -133,6 +133,7 @@ that already carry it; those show up under the listing rather than vanishing.
 | `c` | capture — one line, no fields, from anywhere |
 | `/` | filter the board; the panel counts matches as you type, empty clears |
 | `f` `F` | in Tree: scope the whole board to that branch / clear the scope |
+| `X` `I` | in Review: kill or re-inbox everything rotting, in one go |
 | `j` `k` `h` `l` | move · `J` `K` reorder |
 | `space` | advance status — refuses to start an undefined task |
 | `e`, `Enter` | define / edit |
